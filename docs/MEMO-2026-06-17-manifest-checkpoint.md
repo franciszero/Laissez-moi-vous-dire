@@ -11,8 +11,9 @@
 - L21：`../L21/manifest.json` 已升级为正式 species deck（94 vocab + **73 张 reviewed species checkpoint 卡**，来源为 VibeVoice 的 `docs/french-wiki/census/recapture/reconciled/L21.species.json`；`coverage_report.py` 显示 `species 覆盖: 73/73`）。
 - 验证：全量 **49 passed**（含 L21 manifest 73/73 species 覆盖测试）；AppTest 知识点机判流程（提交→DB streak=1→推进）无异常；重启 health 200/0 报错。
 - **故意没做（YAGNI/降risk）**：`drill` 桶渲染；`record_attempt`→srs 的 DRY 重构（行为不变，留着）；8501 覆盖率页面（先用脚本）；`scripts/manifest_build.py`（vocab/anki 派生器，计划里有，本期没做——L21 的 vocab.json/anki 已手工产出）。
-- **卡片精修机制（2026-06-17 续）**：`../L21/L21.card_overrides.json`（按 `species_label` 覆盖 front/back/answer）+ `build_checkpoints_from_species.py --overrides` 合并。卡 id 稳定 → 重建不丢精修/SRS。**已精修 22 张（18 机判 check_fr 填空 + 4 中文自评）**，其余 51 张待续。
-- **后续可做**：继续往 overrides 加卡（剩 51 张，优先高频语法/介词/冠词→机判）；英文规则润色成中文；到期 banner 纳入知识点；drill 桶。
+- **卡片精修机制（2026-06-17 续）**：`../L21/L21.card_overrides.json`（按 `species_label` 覆盖 front/back/answer）+ `build_checkpoints_from_species.py --overrides` 合并。卡 id 稳定 → 重建不丢精修/SRS。**L21 73/73 全部精修完成（49 机判 check_fr 填空 + 24 中文自评，0 通用模板）**。
+- **两个 git 仓库**：app=`Laissez-moi-vous-dire`(听写/)；数据=`Laissez-moi-me-detendre`(本地录屏课/，忽略听写/与媒体)。
+- **后续可做**：新课同法 species→overrides 精修；把自评卡进一步拆成 drill 题型；到期 banner 纳入知识点；drill 桶实现。
 - **重建命令**：`python3 scripts/build_checkpoints_from_species.py --lesson L21 --species-json <VibeVoice/.../reconciled/L21.species.json> --vocab-json ../L21/vocab.json --overrides ../L21/L21.card_overrides.json --out ../L21/manifest.json`
 
 ### （历史）原始计划与决策见下 ↓
