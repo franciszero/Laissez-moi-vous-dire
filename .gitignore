@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS
+.DS_Store
+
+# 运行期/个人数据（每次练习都变，不入库；想版本化练习历史可删掉这行）
+dictation.db
+
+# 旧备份 & 日志
+*.bak
+*.log
+
+# Streamlit 机密（若有）
+.streamlit/secrets.toml

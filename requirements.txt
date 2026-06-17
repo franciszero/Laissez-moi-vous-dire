@@ -1,0 +1,2 @@
+streamlit>=1.30
+pyobjc-framework-CoreServices>=10 ; sys_platform == "darwin"
