@@ -1498,6 +1498,61 @@ def render_word_panel():
     return rows[sel[0]]["text"] if sel else None
 
 
+def _checkpoint_title(card: dict) -> str:
+    """短标题给侧栏列表用：优先 species 名，其次正面第一行。"""
+    title = card.get("source_species") or (card.get("front") or "").splitlines()[0]
+    title = " ".join(str(title).split())
+    return title[:86] + ("…" if len(title) > 86 else "")
+
+
+def _set_checkpoint_index(i: int) -> None:
+    cards = st.session_state.get("cp_cards") or []
+    if not cards:
+        st.session_state.cp_index = 0
+        return
+    st.session_state.cp_index = max(0, min(i, len(cards) - 1))
+    st.session_state.cp_show_back = False
+    st.session_state.pop("cp_feedback", None)
+
+
+def render_checkpoint_panel() -> None:
+    """知识点模式的侧栏目录：显示当前位置，并允许点击跳转。"""
+    cards = st.session_state.get("cp_cards") or []
+    if not cards:
+        st.caption("当前没有知识点卡。")
+        return
+    cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
+    st.markdown("**📝 知识点列表**")
+    st.caption("点击任意一行跳转；跳转只换卡，不记录对错。")
+    rows = []
+    for idx, card in enumerate(cards):
+        kind = "机判" if card.get("answer") else "自评"
+        if "mixed-pronoun-review" in card.get("tags", []):
+            kind = "代词复习"
+        rows.append(
+            {
+                "位置": "▶" if idx == cur else "",
+                "#": idx + 1,
+                "类型": kind,
+                "知识点": _checkpoint_title(card),
+            }
+        )
+    df = pd.DataFrame(rows)
+    event = st.dataframe(
+        df,
+        hide_index=True,
+        width="stretch",
+        height=740,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="checkpoint_table",
+    )
+    sel = event.selection.rows if getattr(event, "selection", None) else []
+    if sel and sel[0] != cur:
+        _set_checkpoint_index(sel[0])
+        st.rerun()
+
+
 def render_card_view(lemma: str) -> None:
     """主窗口里开卷看某个词的完整 Anki 卡。"""
     zh = VOCAB.get(lemma, {}).get("zh", "")
@@ -1523,6 +1578,9 @@ def render_checkpoint() -> None:
     i = st.session_state.cp_index
     if i >= len(cards):
         st.success(f"✅ 这组知识点过完了（{len(cards)} 张）！")
+        if cards and st.button("← 回到最后一张"):
+            _set_checkpoint_index(len(cards) - 1)
+            st.rerun()
         if st.button("↩︎ 退出知识点", type="primary"):
             st.session_state.cp_active = False
             st.rerun()
@@ -1538,9 +1596,24 @@ def render_checkpoint() -> None:
     answer = (card.get("answer") or "").strip()
 
     def _advance():
-        st.session_state.cp_index += 1
+        st.session_state.cp_index = min(st.session_state.cp_index + 1, len(cards))
         st.session_state.cp_show_back = False
         st.session_state.pop("cp_feedback", None)
+
+    def _previous():
+        _set_checkpoint_index(i - 1)
+
+    def _next():
+        _set_checkpoint_index(i + 1)
+
+    nav_prev, nav_pos, nav_next = st.columns([1, 2, 1])
+    if nav_prev.button("← 上一个", disabled=i == 0, key="cp_prev_top"):
+        _previous()
+        st.rerun()
+    nav_pos.caption(f"{i + 1} / {len(cards)}")
+    if nav_next.button("下一个 →", disabled=i >= len(cards) - 1, key="cp_next_top"):
+        _next()
+        st.rerun()
 
     if not st.session_state.get("cp_show_back"):
         if answer:
@@ -1564,26 +1637,43 @@ def render_checkpoint() -> None:
                 (f"✅ 对：{answer}" if ok else f"❌ 你写「{ans}」，应为：{answer}")
             )
             st.markdown(f"**📖** {card['back']}")
-            if st.button("下一张 ▶", type="primary"):
+            c1, c2, c3 = st.columns([1, 2, 1])
+            if c1.button("← 上一个", disabled=i == 0, key="cp_prev_answered"):
+                _previous()
+                st.rerun()
+            if c2.button("下一张 ▶", type="primary"):
                 _advance()
+                st.rerun()
+            if c3.button("跳过到下一张 →", disabled=i >= len(cards) - 1, key="cp_next_answered"):
+                _next()
                 st.rerun()
         else:                                    # 自评卡：揭示背面 → 我对/我错
             st.markdown(f"**📖 答案** {card['back']}")
-            a, b = st.columns(2)
-            if a.button("✅ 我对", type="primary"):
+            a, b, c, d = st.columns(4)
+            if a.button("← 上一个", disabled=i == 0, key="cp_prev_self"):
+                _previous()
+                st.rerun()
+            if b.button("✅ 我对", type="primary"):
                 update_checkpoint(card["id"], True)
                 _advance()
                 st.rerun()
-            if b.button("❌ 我错"):
+            if c.button("❌ 我错"):
                 update_checkpoint(card["id"], False)
                 _advance()
+                st.rerun()
+            if d.button("下一个 →", disabled=i >= len(cards) - 1, key="cp_next_self"):
+                _next()
                 st.rerun()
 
 
 # 左侧原生边栏词表（像 GPT/Claude 主页：自带折叠按钮，折叠后主区满宽）
 with st.sidebar:
     st.divider()
-    _selected = render_word_panel()
+    if st.session_state.get("cp_active"):
+        render_checkpoint_panel()
+        _selected = None
+    else:
+        _selected = render_word_panel()
 
 # 在词表里点某个词 → 主区开卷看它的卡；点「回到听写」收起
 if _selected != st.session_state.get("last_selected"):
