@@ -18,6 +18,7 @@ import macdict as macdict_mod
 import roundlogic
 import matcher
 import mastery as mastery_mod
+import srs
 import asr
 from store import (
     import_vocab_into_db,
@@ -1505,6 +1506,34 @@ def _checkpoint_title(card: dict) -> str:
     return title[:86] + ("…" if len(title) > 86 else "")
 
 
+def _checkpoint_answer_preview(card: dict) -> str:
+    """侧栏答案预览：压成一行，避免把长背面撑爆。"""
+    answer = " ".join(str(card.get("back") or "").split())
+    return answer[:110] + ("…" if len(answer) > 110 else "")
+
+
+def _checkpoint_kind(card: dict) -> str:
+    if "mixed-pronoun-review" in card.get("tags", []):
+        return "代词复习"
+    return "机判" if card.get("answer") else "自评"
+
+
+def _checkpoint_mastery_score(state: dict | None) -> float:
+    state = state or {}
+    return srs.checkpoint_mastery_score(
+        state.get("correct_streak", 0),
+        state.get("interval_days", 0),
+    )
+
+
+def _checkpoint_mastery_mark(score: float) -> str:
+    if score >= 0.75:
+        return "🟩"
+    if score >= 0.35:
+        return "🟨"
+    return "⬜"
+
+
 def _set_checkpoint_index(i: int) -> None:
     cards = st.session_state.get("cp_cards") or []
     if not cards:
@@ -1523,23 +1552,35 @@ def render_checkpoint_panel() -> None:
         return
     cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
     st.markdown("**📝 知识点列表**")
-    st.caption("点按钮跳转；跳转只换卡，不记录对错。")
+    st.caption("⬜→🟨→🟩=按知识点 SRS 间隔计算的掌握度；点按钮跳转不记录对错。")
+    show_answers = st.checkbox("显示答案", value=False, key="cp_show_answer_list")
+    states = get_checkpoint_state([card["id"] for card in cards])
     with st.container(height=740):
         for idx, card in enumerate(cards):
-            kind = "机判" if card.get("answer") else "自评"
-            if "mixed-pronoun-review" in card.get("tags", []):
-                kind = "代词复习"
+            kind = _checkpoint_kind(card)
+            score = _checkpoint_mastery_score(states.get(card["id"]))
+            mark = _checkpoint_mastery_mark(score)
+            color = mastery_mod.mastery_color(score)
             prefix = "▶ " if idx == cur else ""
-            label = f"{prefix}{idx + 1}. {kind} · {_checkpoint_title(card)}"
-            if st.button(
-                label,
-                key=f"cp_jump_{idx}",
-                type="primary" if idx == cur else "secondary",
-                disabled=idx == cur,
-                width="stretch",
-            ):
-                _set_checkpoint_index(idx)
-                st.rerun()
+            label = f"{prefix}{mark} {idx + 1}. {kind} · {_checkpoint_title(card)}"
+            swatch, action = st.columns([0.08, 0.92], gap="small")
+            swatch.markdown(
+                f"<div style='height:2.2rem;border-radius:6px;border:1px solid #d8d8d8;"
+                f"background:{color};'></div>",
+                unsafe_allow_html=True,
+            )
+            with action:
+                if st.button(
+                    label,
+                    key=f"cp_jump_{idx}",
+                    type="primary" if idx == cur else "secondary",
+                    disabled=idx == cur,
+                    width="stretch",
+                ):
+                    _set_checkpoint_index(idx)
+                    st.rerun()
+            if show_answers:
+                st.caption(f"答案：{_checkpoint_answer_preview(card)}")
 
 
 def render_card_view(lemma: str) -> None:

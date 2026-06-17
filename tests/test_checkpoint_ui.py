@@ -28,15 +28,23 @@ def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
         knowledge_button.click().run()
         assert not at.exception
         assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
-        assert any("点按钮跳转" in c.value for c in at.caption)
+        assert any("SRS 间隔计算的掌握度" in c.value for c in at.caption)
+        assert any(any(mark in b.label for mark in ("⬜", "🟨", "🟩")) for b in at.button)
 
-        second_list_button = next((b for b in at.button if b.label.startswith("2. ")), None)
+        show_answer = next((c for c in at.checkbox if c.label == "显示答案"), None)
+        assert show_answer is not None
+        assert not any(c.value.startswith("答案：") for c in at.caption)
+        show_answer.set_value(True).run()
+        assert not at.exception
+        assert any(c.value.startswith("答案：") for c in at.caption)
+
+        second_list_button = next((b for b in at.button if "2. " in b.label), None)
         assert second_list_button is not None
         second_list_button.click().run()
         assert not at.exception
         assert f"📝 知识点 2/{expected_count}" in [s.value for s in at.subheader]
 
-        first_list_button = next((b for b in at.button if b.label.startswith("1. ")), None)
+        first_list_button = next((b for b in at.button if "1. " in b.label), None)
         assert first_list_button is not None
         first_list_button.click().run()
         assert not at.exception

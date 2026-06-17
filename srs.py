@@ -18,3 +18,20 @@ def next_schedule(correct_streak: int, ok: bool, now: datetime | None = None):
         interval = 0
     due = now + timedelta(days=interval)
     return streak, interval, due.isoformat(timespec="seconds")
+
+
+def checkpoint_mastery_score(correct_streak: int = 0, interval_days: int = 0) -> float:
+    """知识点掌握度 0~1：用 SRS 间隔映射，间隔越长越接近绿。"""
+    try:
+        streak = int(correct_streak or 0)
+        interval = int(interval_days or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if streak <= 0:
+        return 0.0
+    if interval <= 0:
+        return min(1.0, streak / len(INTERVALS))
+    for idx, days in enumerate(INTERVALS):
+        if interval <= days:
+            return (idx + 1) / len(INTERVALS)
+    return 1.0

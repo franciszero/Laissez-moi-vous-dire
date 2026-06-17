@@ -21,3 +21,13 @@ def test_next_schedule_wrong_resets():
 def test_intervals_match_app():
     # 与 app.record_attempt 现用值一致
     assert srs.INTERVALS == [1, 2, 4, 7, 15, 30]
+
+
+def test_checkpoint_mastery_score_follows_srs_interval():
+    assert srs.checkpoint_mastery_score(0, 0) == 0.0
+    assert srs.checkpoint_mastery_score(0, 15) == 0.0
+
+    scores = [srs.checkpoint_mastery_score(i + 1, days) for i, days in enumerate(srs.INTERVALS)]
+    assert scores == sorted(scores)
+    assert 0.0 < scores[0] < scores[-1] == 1.0
+    assert srs.checkpoint_mastery_score(99, 60) == 1.0
