@@ -1506,10 +1506,71 @@ def _checkpoint_title(card: dict) -> str:
     return title[:86] + ("…" if len(title) > 86 else "")
 
 
-def _checkpoint_answer_preview(card: dict) -> str:
-    """侧栏答案预览：压成一行，避免把长背面撑爆。"""
-    answer = " ".join(str(card.get("back") or "").split())
-    return answer[:110] + ("…" if len(answer) > 110 else "")
+def _format_answer_inline(text: str) -> str:
+    """把知识点答案里的重点接口、代词、提示词做成富文本。"""
+    out = html.escape(text)
+    for phrase in ("先诊断", "判断顺序", "核心区别", "注意", "重要边界", "基础位置", "常用顺序"):
+        out = out.replace(phrase, f"<strong class='answer-key'>{phrase}</strong>")
+    out = re.sub(
+        r"(à \+ [^，。；:：、。]+|de \+ [^，。；:：、。]+|直接宾语|间接宾语|动词接口|数量词)",
+        r"<u>\1</u>",
+        out,
+    )
+    out = re.sub(
+        r"(?<![\wÀ-ÿ])(le|la|les|lui|leur|y|en|me|te|se|nous|vous|COD|COI|à|de)(?![\wÀ-ÿ])",
+        r"<span class='answer-fr'>\1</span>",
+        out,
+        flags=re.IGNORECASE,
+    )
+    return out
+
+
+CHECKPOINT_ANSWER_CSS = "\n".join(
+    [
+        "<style>",
+        ".checkpoint-answer{font-size:.9rem;line-height:1.35;color:#1f2933;}",
+        ".checkpoint-answer .answer-lead{font-weight:750;color:#123b72;margin:.05rem 0 .35rem;}",
+        ".checkpoint-answer .answer-line{margin:.18rem 0;}",
+        ".checkpoint-answer .answer-gap{height:.35rem;}",
+        ".checkpoint-answer .answer-num,.checkpoint-answer .answer-dot{font-weight:750;color:#5b21b6;margin-right:.28rem;}",
+        ".checkpoint-answer .answer-key{font-weight:800;color:#9d174d;}",
+        ".checkpoint-answer .answer-fr{font-family:Georgia,'Times New Roman',serif;font-weight:700;color:#0f766e;}",
+        ".checkpoint-answer u{text-decoration-thickness:2px;text-underline-offset:3px;color:#7c2d12;}",
+        "</style>",
+    ]
+)
+
+
+def _checkpoint_answer_html(card: dict, include_style: bool = False) -> str:
+    """主窗口和侧栏共用的答案渲染：保留结构并增强重点样式。"""
+    raw = str(card.get("back") or "")
+    lines = raw.splitlines() or [raw]
+    body = [CHECKPOINT_ANSWER_CSS] if include_style else []
+    body.append("<div class='checkpoint-answer'>")
+    seen_lead = False
+    for line in lines:
+        text = line.strip()
+        if not text:
+            body.append("<div class='answer-gap'></div>")
+            continue
+        numbered = re.match(r"^(\d+)\.\s+(.*)$", text)
+        if numbered:
+            body.append(
+                f"<div class='answer-line'><span class='answer-num'>{numbered.group(1)}.</span>"
+                f"{_format_answer_inline(numbered.group(2))}</div>"
+            )
+            continue
+        if text.startswith("- "):
+            body.append(
+                f"<div class='answer-line'><span class='answer-dot'>•</span>"
+                f"{_format_answer_inline(text[2:])}</div>"
+            )
+            continue
+        cls = "answer-lead" if not seen_lead else "answer-line"
+        body.append(f"<div class='{cls}'>{_format_answer_inline(text)}</div>")
+        seen_lead = True
+    body.append("</div>")
+    return "\n".join(body)
 
 
 def _checkpoint_kind(card: dict) -> str:
@@ -1534,6 +1595,18 @@ def _checkpoint_mastery_mark(score: float) -> str:
     return "⬜"
 
 
+def _render_checkpoint_mastery_cell(score: float) -> None:
+    color = mastery_mod.mastery_color(score)
+    mark = _checkpoint_mastery_mark(score)
+    pct = round(score * 100)
+    st.markdown(
+        f"<div style='height:2.35rem;border-radius:6px;border:1px solid #d8d8d8;"
+        f"background:{color};display:flex;align-items:center;justify-content:center;"
+        f"font-weight:700;color:#1a1a1a;'>{mark} {pct}%</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _set_checkpoint_index(i: int) -> None:
     cards = st.session_state.get("cp_cards") or []
     if not cards:
@@ -1551,25 +1624,26 @@ def render_checkpoint_panel() -> None:
         st.caption("当前没有知识点卡。")
         return
     cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
-    st.markdown("**📝 知识点列表**")
+    st.markdown("**📋 知识点表**")
     st.caption("⬜→🟨→🟩=按知识点 SRS 间隔计算的掌握度；点按钮跳转不记录对错。")
     show_answers = st.checkbox("显示答案", value=False, key="cp_show_answer_list")
     states = get_checkpoint_state([card["id"] for card in cards])
+    if show_answers:
+        st.markdown(CHECKPOINT_ANSWER_CSS, unsafe_allow_html=True)
+    widths = [0.62, 0.18, 0.58] if show_answers else [0.78, 0.22]
+    header = st.columns(widths, gap="small")
+    header[0].markdown("**问题**")
+    header[1].markdown("**掌握度**")
+    if show_answers:
+        header[2].markdown("**答案**")
     with st.container(height=740):
         for idx, card in enumerate(cards):
             kind = _checkpoint_kind(card)
             score = _checkpoint_mastery_score(states.get(card["id"]))
-            mark = _checkpoint_mastery_mark(score)
-            color = mastery_mod.mastery_color(score)
             prefix = "▶ " if idx == cur else ""
-            label = f"{prefix}{mark} {idx + 1}. {kind} · {_checkpoint_title(card)}"
-            swatch, action = st.columns([0.08, 0.92], gap="small")
-            swatch.markdown(
-                f"<div style='height:2.2rem;border-radius:6px;border:1px solid #d8d8d8;"
-                f"background:{color};'></div>",
-                unsafe_allow_html=True,
-            )
-            with action:
+            label = f"{prefix}{idx + 1}. {kind} · {_checkpoint_title(card)}"
+            row = st.columns(widths, gap="small")
+            with row[0]:
                 if st.button(
                     label,
                     key=f"cp_jump_{idx}",
@@ -1579,8 +1653,11 @@ def render_checkpoint_panel() -> None:
                 ):
                     _set_checkpoint_index(idx)
                     st.rerun()
+            with row[1]:
+                _render_checkpoint_mastery_cell(score)
             if show_answers:
-                st.caption(f"答案：{_checkpoint_answer_preview(card)}")
+                with row[2]:
+                    st.markdown(_checkpoint_answer_html(card), unsafe_allow_html=True)
 
 
 def render_card_view(lemma: str) -> None:
@@ -1666,7 +1743,8 @@ def render_checkpoint() -> None:
             (st.success if ok else st.error)(
                 (f"✅ 对：{answer}" if ok else f"❌ 你写「{ans}」，应为：{answer}")
             )
-            st.markdown(f"**📖** {card['back']}")
+            st.markdown("**📖 答案**")
+            st.markdown(_checkpoint_answer_html(card, include_style=True), unsafe_allow_html=True)
             c1, c2, c3 = st.columns([1, 2, 1])
             if c1.button("← 上一个", disabled=i == 0, key="cp_prev_answered"):
                 _previous()
@@ -1678,7 +1756,8 @@ def render_checkpoint() -> None:
                 _next()
                 st.rerun()
         else:                                    # 自评卡：揭示背面 → 我对/我错
-            st.markdown(f"**📖 答案** {card['back']}")
+            st.markdown("**📖 答案**")
+            st.markdown(_checkpoint_answer_html(card, include_style=True), unsafe_allow_html=True)
             a, b, c, d = st.columns(4)
             if a.button("← 上一个", disabled=i == 0, key="cp_prev_self"):
                 _previous()

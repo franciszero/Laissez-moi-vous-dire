@@ -29,14 +29,19 @@ def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
         assert not at.exception
         assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
         assert any("SRS 间隔计算的掌握度" in c.value for c in at.caption)
-        assert any(any(mark in b.label for mark in ("⬜", "🟨", "🟩")) for b in at.button)
+        assert "**问题**" in [m.value for m in at.markdown]
+        assert "**掌握度**" in [m.value for m in at.markdown]
+        assert any(any(mark in m.value for mark in ("⬜", "🟨", "🟩")) for m in at.markdown)
 
         show_answer = next((c for c in at.checkbox if c.label == "显示答案"), None)
         assert show_answer is not None
-        assert not any(c.value.startswith("答案：") for c in at.caption)
+        assert "**答案**" not in [m.value for m in at.markdown]
+        assert not any("checkpoint-answer" in m.value for m in at.markdown)
         show_answer.set_value(True).run()
         assert not at.exception
-        assert any(c.value.startswith("答案：") for c in at.caption)
+        assert "**答案**" in [m.value for m in at.markdown]
+        assert any("checkpoint-answer" in m.value for m in at.markdown)
+        assert any("answer-key" in m.value or "answer-fr" in m.value or "<u>" in m.value for m in at.markdown)
 
         second_list_button = next((b for b in at.button if "2. " in b.label), None)
         assert second_list_button is not None
