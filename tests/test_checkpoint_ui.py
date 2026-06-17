@@ -28,8 +28,19 @@ def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
         knowledge_button.click().run()
         assert not at.exception
         assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
-        assert any("点击任意一行跳转" in c.value for c in at.caption)
-        assert len(at.dataframe) >= 1
+        assert any("点按钮跳转" in c.value for c in at.caption)
+
+        second_list_button = next((b for b in at.button if b.label.startswith("2. ")), None)
+        assert second_list_button is not None
+        second_list_button.click().run()
+        assert not at.exception
+        assert f"📝 知识点 2/{expected_count}" in [s.value for s in at.subheader]
+
+        first_list_button = next((b for b in at.button if b.label.startswith("1. ")), None)
+        assert first_list_button is not None
+        first_list_button.click().run()
+        assert not at.exception
+        assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
 
         next_buttons = [b for b in at.button if b.label == "下一个 →" and not b.disabled]
         assert next_buttons

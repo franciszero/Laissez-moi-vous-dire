@@ -1516,41 +1516,30 @@ def _set_checkpoint_index(i: int) -> None:
 
 
 def render_checkpoint_panel() -> None:
-    """知识点模式的侧栏目录：显示当前位置，并允许点击跳转。"""
+    """知识点模式的侧栏目录：明确按钮列表，显示当前位置，并允许跳转。"""
     cards = st.session_state.get("cp_cards") or []
     if not cards:
         st.caption("当前没有知识点卡。")
         return
     cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
     st.markdown("**📝 知识点列表**")
-    st.caption("点击任意一行跳转；跳转只换卡，不记录对错。")
-    rows = []
-    for idx, card in enumerate(cards):
-        kind = "机判" if card.get("answer") else "自评"
-        if "mixed-pronoun-review" in card.get("tags", []):
-            kind = "代词复习"
-        rows.append(
-            {
-                "位置": "▶" if idx == cur else "",
-                "#": idx + 1,
-                "类型": kind,
-                "知识点": _checkpoint_title(card),
-            }
-        )
-    df = pd.DataFrame(rows)
-    event = st.dataframe(
-        df,
-        hide_index=True,
-        width="stretch",
-        height=740,
-        on_select="rerun",
-        selection_mode="single-row",
-        key="checkpoint_table",
-    )
-    sel = event.selection.rows if getattr(event, "selection", None) else []
-    if sel and sel[0] != cur:
-        _set_checkpoint_index(sel[0])
-        st.rerun()
+    st.caption("点按钮跳转；跳转只换卡，不记录对错。")
+    with st.container(height=740):
+        for idx, card in enumerate(cards):
+            kind = "机判" if card.get("answer") else "自评"
+            if "mixed-pronoun-review" in card.get("tags", []):
+                kind = "代词复习"
+            prefix = "▶ " if idx == cur else ""
+            label = f"{prefix}{idx + 1}. {kind} · {_checkpoint_title(card)}"
+            if st.button(
+                label,
+                key=f"cp_jump_{idx}",
+                type="primary" if idx == cur else "secondary",
+                disabled=idx == cur,
+                width="stretch",
+            ):
+                _set_checkpoint_index(idx)
+                st.rerun()
 
 
 def render_card_view(lemma: str) -> None:
