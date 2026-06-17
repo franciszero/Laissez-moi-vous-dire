@@ -8,10 +8,11 @@
 - 新模块：`srs.py`、`manifest.py`、`scripts/coverage_report.py`（各带测试/烟测）。
 - DB：`checkpoints` 表 + `store.ensure_checkpoint/get_checkpoint_state/update_checkpoint`。
 - 8501：`load_checkpoints`、侧栏「📝 知识点(N)」、`render_checkpoint`（机判/自评）、主区 `cp_active` 分叉（独立状态，不碰词引擎）。
-- L21：`../L21/manifest.json` 已升级为正式 species deck（94 vocab + **73 张 reviewed species checkpoint 卡**，来源为 VibeVoice 的 `docs/french-wiki/census/recapture/reconciled/L21.species.json`；`coverage_report.py` 显示 `species 覆盖: 73/73`）。
-- 验证：全量 **49 passed**（含 L21 manifest 73/73 species 覆盖测试）；AppTest 知识点机判流程（提交→DB streak=1→推进）无异常；重启 health 200/0 报错。
+- L21：`../L21/manifest.json` 已升级为正式复习 deck（94 vocab + **85 张知识点卡**：73 张 reviewed species checkpoint 卡 + 12 张混合代词作业复习卡；来源为 VibeVoice 的 `docs/french-wiki/census/recapture/reconciled/L21.species.json`；`coverage_report.py` 显示 `species 覆盖: 73/73`）。
+- 验证：全量 **50 passed**（含 L21 manifest 73/73 species 覆盖测试 + 12 张代词复习卡不泄露原题答案测试）；AppTest 知识点流程渲染无异常；重启 health 200/0 报错。
 - **故意没做（YAGNI/降risk）**：`drill` 桶渲染；`record_attempt`→srs 的 DRY 重构（行为不变，留着）；8501 覆盖率页面（先用脚本）；`scripts/manifest_build.py`（vocab/anki 派生器，计划里有，本期没做——L21 的 vocab.json/anki 已手工产出）。
 - **卡片精修机制（2026-06-17 续）**：`../L21/L21.card_overrides.json`（按 `species_label` 覆盖 front/back/answer）+ `build_checkpoints_from_species.py --overrides` 合并。卡 id 稳定 → 重建不丢精修/SRS。**L21 73/73 全部精修完成（49 机判 check_fr 填空 + 24 中文自评，0 通用模板）**。
+- **混合代词作业复习卡（2026-06-17 续）**：L21 末尾老师明确说“这个代词的题没有讲……重新做这个题”，所以 `../L21/manifest.json` 里追加 `pronoun-review-assignment` chunk：12 张 `mixed-pronoun-review` 自评卡，复习 COD/COI/y/en/位置/顺序/做题流程，**不使用截图原题句子、不提供 30 题逐题答案、不计入 species 分母**。
 - **两个 git 仓库**：app=`Laissez-moi-vous-dire`(听写/)；数据=`Laissez-moi-me-detendre`(本地录屏课/，忽略听写/与媒体)。
 - **后续可做**：新课同法 species→overrides 精修；把自评卡进一步拆成 drill 题型；到期 banner 纳入知识点；drill 桶实现。
 - **重建命令**：`python3 scripts/build_checkpoints_from_species.py --lesson L21 --species-json <VibeVoice/.../reconciled/L21.species.json> --vocab-json ../L21/vocab.json --overrides ../L21/L21.card_overrides.json --out ../L21/manifest.json`
@@ -22,7 +23,7 @@
   - `srs.py`+`tests/test_srs.py`（next_schedule，INTERVALS=[1,2,4,7,15,30] 与 app 一致）
   - `manifest.py`+`tests/test_manifest.py`（validate/load/checkpoints/vocab_items）
   - `scripts/coverage_report.py`（烟测通过）
-  - 全量 **49 passed**。
+  - 全量 **50 passed**。
 - **下一步：Task 4**（改 app.py/store.py：init_db 加 `checkpoints` 表；store 加 ensure_checkpoint/get_checkpoint_state/update_checkpoint；`record_attempt` 改用 `srs.next_schedule` 保持行为等价）→ T5 8501 知识点 UI（独立 cp_* 状态，**别碰 pool/current_word**）→ T6 写 `../L21/manifest.json` → T7 验证+文档。
 - ⚠️ T4-T5 要改 app.py，改完**全量重启**再验。用 executing-plans 逐个做。
 - 续命：直接打开 plan 从 Task 2 往下；环境/重启/验证看本文件 §7 与 HANDOFF。
