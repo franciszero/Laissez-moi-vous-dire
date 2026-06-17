@@ -1595,14 +1595,15 @@ def _checkpoint_mastery_mark(score: float) -> str:
     return "⬜"
 
 
-def _render_checkpoint_mastery_cell(score: float) -> None:
+def _render_checkpoint_question_cell(label: str, score: float, current: bool) -> None:
     color = mastery_mod.mastery_color(score)
-    mark = _checkpoint_mastery_mark(score)
-    pct = round(score * 100)
+    border = "#8aa7ff" if current else "#d8d8d8"
+    weight = 750 if current else 600
+    text = html.escape(label)
     st.markdown(
-        f"<div style='height:2.35rem;border-radius:6px;border:1px solid #d8d8d8;"
-        f"background:{color};display:flex;align-items:center;justify-content:center;"
-        f"font-weight:700;color:#1a1a1a;'>{mark} {pct}%</div>",
+        f"<div style='min-height:2.55rem;border-radius:7px;border:1px solid {border};"
+        f"background:{color};display:flex;align-items:center;padding:.38rem .55rem;"
+        f"font-weight:{weight};color:#1a1a1a;line-height:1.25;'>{text}</div>",
         unsafe_allow_html=True,
     )
 
@@ -1625,17 +1626,16 @@ def render_checkpoint_panel() -> None:
         return
     cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
     st.markdown("**📋 知识点表**")
-    st.caption("⬜→🟨→🟩=按知识点 SRS 间隔计算的掌握度；点按钮跳转不记录对错。")
+    st.caption("问题列背景色=按知识点 SRS 间隔计算的掌握度（灰→黄→绿）；点跳转不记录对错。")
     show_answers = st.checkbox("显示答案", value=False, key="cp_show_answer_list")
     states = get_checkpoint_state([card["id"] for card in cards])
     if show_answers:
         st.markdown(CHECKPOINT_ANSWER_CSS, unsafe_allow_html=True)
-    widths = [0.62, 0.18, 0.58] if show_answers else [0.78, 0.22]
+    widths = [0.38, 0.62] if show_answers else [1.0]
     header = st.columns(widths, gap="small")
     header[0].markdown("**问题**")
-    header[1].markdown("**掌握度**")
     if show_answers:
-        header[2].markdown("**答案**")
+        header[1].markdown("**答案**")
     with st.container(height=740):
         for idx, card in enumerate(cards):
             kind = _checkpoint_kind(card)
@@ -1644,8 +1644,9 @@ def render_checkpoint_panel() -> None:
             label = f"{prefix}{idx + 1}. {kind} · {_checkpoint_title(card)}"
             row = st.columns(widths, gap="small")
             with row[0]:
+                _render_checkpoint_question_cell(label, score, idx == cur)
                 if st.button(
-                    label,
+                    f"跳到 {idx + 1}" if idx != cur else "当前知识点",
                     key=f"cp_jump_{idx}",
                     type="primary" if idx == cur else "secondary",
                     disabled=idx == cur,
@@ -1653,10 +1654,8 @@ def render_checkpoint_panel() -> None:
                 ):
                     _set_checkpoint_index(idx)
                     st.rerun()
-            with row[1]:
-                _render_checkpoint_mastery_cell(score)
             if show_answers:
-                with row[2]:
+                with row[1]:
                     st.markdown(_checkpoint_answer_html(card), unsafe_allow_html=True)
 
 
