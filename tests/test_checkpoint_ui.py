@@ -5,6 +5,10 @@ import manifest
 from streamlit.testing.v1 import AppTest
 
 
+def _has_answer(at: AppTest) -> bool:
+    return any(m.value == "**📖 答案**" for m in at.markdown)
+
+
 def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
     db_path = Path("dictation.db")
     backup_path = tmp_path / "dictation.db.bak"
@@ -31,6 +35,7 @@ def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
 
         # 侧栏「知识点表」是真·表格(st.dataframe)，不再是按钮列表
         assert len(at.dataframe) >= 1
+        initial_table_key = at.dataframe[0].key
         assert not [b for b in at.button if "跳到" in (b.label or "")]
 
         # 「显示答案」开关存在且可切换（给表加「答案」列），不抛异常
@@ -40,18 +45,43 @@ def test_l21_checkpoint_navigation_has_list_and_prev_next(tmp_path):
         assert not at.exception
         assert len(at.dataframe) >= 1
 
-        # 卡片视图的上一个/下一个仍可导航
-        next_buttons = [b for b in at.button if b.label == "下一个 →" and not b.disabled]
-        assert next_buttons
-        next_buttons[0].click().run()
+        # 上方「下一个」用于做题导航：换卡并隐藏答案
+        reveal = next((b for b in at.button if b.label == "👁 揭示答案"), None)
+        assert reveal is not None
+        reveal.click().run()
+        assert not at.exception
+        assert _has_answer(at)
+
+        top_next = next((b for b in at.button if b.key == "cp_next_top"), None)
+        assert top_next is not None and not top_next.disabled
+        top_next.click().run()
         assert not at.exception
         assert f"📝 知识点 2/{expected_count}" in [s.value for s in at.subheader]
+        # AppTest 不能模拟 dataframe 点行；key 随当前卡变化可以清掉旧选择态，
+        # 避免用户用按钮翻页后再次点表格时被上一条 selection 卡住。
+        assert at.dataframe[0].key != initial_table_key
+        assert not _has_answer(at)
 
+        # 上方「上一个」仍可导航
         prev_buttons = [b for b in at.button if b.label == "← 上一个" and not b.disabled]
         assert prev_buttons
         prev_buttons[0].click().run()
         assert not at.exception
         assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
+
+        # 自评卡：揭示答案后用「我对」推进；不再有冗余的底部「下一个」
+        reveal = next((b for b in at.button if b.label == "👁 揭示答案"), None)
+        assert reveal is not None
+        reveal.click().run()
+        assert not at.exception
+        assert _has_answer(at)
+        assert not [b for b in at.button if b.key == "cp_next_self"]  # 冗余按钮已删
+
+        graded_next = next((b for b in at.button if b.label == "✅ 我对"), None)
+        assert graded_next is not None
+        graded_next.click().run()
+        assert not at.exception
+        assert f"📝 知识点 2/{expected_count}" in [s.value for s in at.subheader]
     finally:
         if backup_path.exists():
             shutil.copy2(backup_path, db_path)

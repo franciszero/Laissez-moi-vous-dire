@@ -838,7 +838,6 @@ if "cp_active" not in st.session_state:   # 「📝 知识点」是独立流程�
     st.session_state.cp_cards = []
     st.session_state.cp_index = 0
     st.session_state.cp_show_back = False
-    st.session_state.cp_last_sel = None
 
 if "pending" not in st.session_state:
     st.session_state.pending = None   # 中文拿不准时的人工自判暂存
@@ -942,7 +941,6 @@ with st.sidebar:
         st.session_state.cp_index = 0
         st.session_state.cp_show_back = False
         st.session_state.cp_label = f"知识点 · {chosen_lesson}"
-        st.session_state.cp_last_sel = None
         st.session_state.pop("cp_feedback", None)
         st.rerun()
     st.caption("错词=做错过的；到期=遗忘曲线该复习的（答对延长间隔）；变形=有阴阳性的词；知识点=老师讲的非单词要点（卡片复习）。")
@@ -1442,19 +1440,32 @@ def render_word_panel():
     st.markdown("**📋 词表**")
     st.caption(
         "形=听写、义=词义、音=发音、变=阴阳性变形，各列按掌握度上色（灰→黄→绿）；"
-        "「词」列底色=适用维度里最弱（全绿才算真掌握；无阴性的词「变」格留灰不计）。词前 ▶=当前词、✅/❌=本轮结果。"
+        "「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果；🙈+灰行=已隐藏（不进练习）。"
+        "点任一词 → 主区可「隐藏 / 恢复」。"
     )
     show_trans = st.checkbox("显示翻译", value=False, key="show_trans")
     pool = st.session_state.pool
     res = st.session_state.round_results
     rows = get_words_by_ids(pool)
-    attempts = get_attempts_for_words(pool)
+    # 把本课已隐藏的词也列出来（弱化显示，便于查看与恢复）
+    lesson = st.session_state.get("round_lesson", "全部")
+    lesson_lemmas = set(VOCAB) if lesson == "全部" else set(LESSONS.get(lesson, []))
+    pool_ids = {r["id"] for r in rows}
+    hidden_extra = [
+        r for r in get_hidden_words()
+        if r["text"] in lesson_lemmas and r["id"] not in pool_ids
+    ]
+    hidden_ids = {r["id"] for r in hidden_extra}
+    rows = rows + hidden_extra
+    attempts = get_attempts_for_words([r["id"] for r in rows])
     scores = {r["id"]: mastery_mod.skill_scores(attempts.get(r["id"], [])) for r in rows}
 
     cur = st.session_state.get("current_word")
     cur_id = cur["id"] if cur is not None else None
 
     def _disp(r):
+        if r["id"] in hidden_ids:
+            return f"🙈 {r['text']}"
         here = "▶ " if r["id"] == cur_id else ""
         icon = "✅ " if res.get(r["id"]) is True else "❌ " if res.get(r["id"]) is False else ""
         return f"{here}{icon}{r['text']}"
@@ -1467,11 +1478,14 @@ def render_word_panel():
             "音": ["" for _ in rows],
             "变": ["" for _ in rows],
             "翻译": [VOCAB.get(r["text"], {}).get("zh", "") for r in rows],
+            "状态": ["已隐藏" if r["id"] in hidden_ids else "" for r in rows],
         }
     )
 
     def _style(row):
         r = rows[row.name]
+        if r["id"] in hidden_ids:                       # 已隐藏：整行弱化
+            return ["background-color:#fafafa; color:#bbb" for _ in row.index]
         sc = scores[r["id"]]
         has_fem = bool(VOCAB.get(r["text"], {}).get("fem"))
         skills = mastery_mod.BASE_SKILLS + (("morph",) if has_fem else ())
@@ -1487,7 +1501,7 @@ def render_word_panel():
             for c in row.index
         ]
 
-    cols = ["词", "形", "义", "音", "变", "翻译"] if show_trans else ["词", "形", "义", "音", "变"]
+    cols = ["词", "形", "义", "音", "变", "翻译", "状态"] if show_trans else ["词", "形", "义", "音", "变", "状态"]
     event = st.dataframe(
         df.style.apply(_style, axis=1),
         column_order=cols,
@@ -1582,6 +1596,37 @@ def _checkpoint_kind(card: dict) -> str:
     return "机判" if card.get("answer") else "自评"
 
 
+# 知识点「类别」：从 tags 里挑最有信息量的（具体→宽泛），给列表分组/查找用。
+_CAT_RULES = [
+    ("mixed-pronoun-review", "代词"),
+    ("conjugation", "变位"),
+    ("word_family_confusion", "动词词族"),
+    ("pronominal_reflexive", "代词式动词"),
+    ("past_participle_agreement", "过去分词配合"),
+    ("agreement", "性数配合"),
+    ("tense_system", "时态"),
+    ("comparison", "比较"),
+    ("article", "冠词"),
+    ("gender_number", "性数"),
+    ("spelling_pronunciation_gap", "拼写发音"),
+    ("requires_de", "介词 de"),
+    ("requires_a", "介词 à"),
+    ("preposition_interface", "介词"),
+    ("frequency_expressions", "频率"),
+    ("listening_keyword", "听力词"),
+    ("sentence_frame", "句型"),
+]
+
+
+def _checkpoint_category(card: dict) -> str:
+    """知识点类别（中文）：用于在列表里按语法主题查找，而不是机判/自评这种判分方式。"""
+    tags = set(card.get("tags") or [])
+    for tag, cat in _CAT_RULES:
+        if tag in tags:
+            return cat
+    return "词汇"
+
+
 def _checkpoint_mastery_score(state: dict | None) -> float:
     state = state or {}
     return srs.checkpoint_mastery_score(
@@ -1611,13 +1656,15 @@ def _render_checkpoint_question_cell(label: str, score: float, current: bool) ->
     )
 
 
-def _set_checkpoint_index(i: int) -> None:
+def _set_checkpoint_index(i: int, *, show_back: bool = False) -> None:
     cards = st.session_state.get("cp_cards") or []
     if not cards:
         st.session_state.cp_index = 0
+        st.session_state.cp_show_back = False
+        st.session_state.pop("cp_feedback", None)
         return
     st.session_state.cp_index = max(0, min(i, len(cards) - 1))
-    st.session_state.cp_show_back = False
+    st.session_state.cp_show_back = show_back
     st.session_state.pop("cp_feedback", None)
 
 
@@ -1629,14 +1676,14 @@ def render_checkpoint_panel() -> None:
         return
     cur = max(0, min(st.session_state.get("cp_index", 0), len(cards) - 1))
     st.markdown("**📋 知识点表**")
-    st.caption("「掌握」列按知识点 SRS 间隔上色（灰→黄→绿）；▶=当前；点某行跳到那张卡（不记对错）。")
+    st.caption("「类别」可查找主题（代词/变位/时态/介词…）；「掌握」按 SRS 间隔上色；▶=当前；点行跳到那张卡。用表格右上角 🔍 搜「变位」「代词」「-dre」等关键字定位。")
     show_answers = st.checkbox("显示答案", value=False, key="cp_show_answer_list")
     states = get_checkpoint_state([c["id"] for c in cards])
     scores = [_checkpoint_mastery_score(states.get(c["id"])) for c in cards]
 
     data = {
         "#": [("▶ " if i == cur else "") + str(i + 1) for i in range(len(cards))],
-        "类型": [_checkpoint_kind(c) for c in cards],
+        "类别": [_checkpoint_category(c) for c in cards],
         "知识点": [_checkpoint_title(c) for c in cards],
         "掌握": ["" for _ in cards],
     }
@@ -1658,11 +1705,10 @@ def render_checkpoint_panel() -> None:
         height=740,
         on_select="rerun",
         selection_mode="single-row",
-        key="cp_table",
+        key=f"cp_table_{cur}",
     )
     sel = event.selection.rows if getattr(event, "selection", None) else []
-    if sel and sel[0] != st.session_state.get("cp_last_sel"):
-        st.session_state.cp_last_sel = sel[0]   # 只在选择变化时跳，避免被其它 rerun 拽回
+    if sel and sel[0] != cur:
         _set_checkpoint_index(sel[0])
         st.rerun()
 
@@ -1671,6 +1717,19 @@ def render_card_view(lemma: str) -> None:
     """主窗口里开卷看某个词的完整 Anki 卡。"""
     zh = VOCAB.get(lemma, {}).get("zh", "")
     st.subheader(f"📖 {lemma}" + (f" — {zh}" if zh else ""))
+    # 软删除：点词进来这里就能隐藏/恢复（不用进听写流程）
+    _ids = get_ids_for_lemmas([lemma])
+    if _ids:
+        wid = _ids[0]
+        if wid in _hidden_id_set():
+            st.caption("🙈 这个词当前已隐藏，不进任何练习。")
+            if st.button("↩︎ 恢复（重新纳入背诵）", key="cardview_restore"):
+                set_word_hidden(wid, False)
+                st.rerun()
+        else:
+            if st.button("🙈 这个词不用背（隐藏）", key="cardview_hide"):
+                set_word_hidden(wid, True)
+                st.rerun()
     card_html = render_card_cached(lemma)
     if card_html:
         components.html(
@@ -1714,11 +1773,11 @@ def render_checkpoint() -> None:
         st.session_state.cp_show_back = False
         st.session_state.pop("cp_feedback", None)
 
-    def _previous():
-        _set_checkpoint_index(i - 1)
+    def _previous(*, show_back: bool = False):
+        _set_checkpoint_index(i - 1, show_back=show_back)
 
-    def _next():
-        _set_checkpoint_index(i + 1)
+    def _next(*, show_back: bool = False):
+        _set_checkpoint_index(i + 1, show_back=show_back)
 
     nav_prev, nav_pos, nav_next = st.columns([1, 2, 1])
     if nav_prev.button("← 上一个", disabled=i == 0, key="cp_prev_top"):
@@ -1752,22 +1811,19 @@ def render_checkpoint() -> None:
             )
             st.markdown("**📖 答案**")
             st.markdown(_checkpoint_answer_html(card, include_style=True), unsafe_allow_html=True)
-            c1, c2, c3 = st.columns([1, 2, 1])
+            c1, c2 = st.columns([1, 2])
             if c1.button("← 上一个", disabled=i == 0, key="cp_prev_answered"):
-                _previous()
+                _previous(show_back=True)
                 st.rerun()
             if c2.button("下一张 ▶", type="primary"):
                 _advance()
                 st.rerun()
-            if c3.button("跳过到下一张 →", disabled=i >= len(cards) - 1, key="cp_next_answered"):
-                _next()
-                st.rerun()
         else:                                    # 自评卡：揭示背面 → 我对/我错
             st.markdown("**📖 答案**")
             st.markdown(_checkpoint_answer_html(card, include_style=True), unsafe_allow_html=True)
-            a, b, c, d = st.columns(4)
+            a, b, c = st.columns(3)
             if a.button("← 上一个", disabled=i == 0, key="cp_prev_self"):
-                _previous()
+                _previous(show_back=True)
                 st.rerun()
             if b.button("✅ 我对", type="primary"):
                 update_checkpoint(card["id"], True)
@@ -1776,9 +1832,6 @@ def render_checkpoint() -> None:
             if c.button("❌ 我错"):
                 update_checkpoint(card["id"], False)
                 _advance()
-                st.rerun()
-            if d.button("下一个 →", disabled=i >= len(cards) - 1, key="cp_next_self"):
-                _next()
                 st.rerun()
 
 
