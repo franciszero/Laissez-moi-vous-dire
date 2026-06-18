@@ -786,6 +786,29 @@ st.set_page_config(
     layout="centered",
 )
 
+st.markdown(
+    """
+    <style>
+    section[data-testid="stSidebar"] {
+        width: min(44vw, 42rem) !important;
+        min-width: min(44vw, 38rem) !important;
+    }
+    section[data-testid="stSidebar"] > div:first-child {
+        width: min(44vw, 42rem) !important;
+        min-width: min(44vw, 38rem) !important;
+    }
+    @media (max-width: 900px) {
+        section[data-testid="stSidebar"],
+        section[data-testid="stSidebar"] > div:first-child {
+            width: 92vw !important;
+            min-width: 92vw !important;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 init_db()
 
 VOCAB, LESSONS = load_vocab()
