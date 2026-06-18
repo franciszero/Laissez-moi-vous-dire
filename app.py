@@ -84,11 +84,18 @@ def macdict_cached(lemma: str):
     return macdict_mod.define(lemma)
 
 
+def word_zh(lemma: str) -> str:
+    """词的中文释义：优先「当前练习这一课」的释义（同词跨课释义可能不同），否则用合并值。"""
+    entry = VOCAB.get(lemma) or {}
+    lesson = st.session_state.get("round_lesson")
+    return (entry.get("zh_by_lesson") or {}).get(lesson) or entry.get("zh", "")
+
+
 def render_learn_panel(lemma: str) -> None:
     """答完/显示答案后，展示中文词义 + 可选的 Anki 富内容。"""
-    entry = VOCAB.get(lemma)
-    if entry and entry.get("zh"):
-        st.markdown(f"**释义**：{entry['zh']}")
+    zh = word_zh(lemma)
+    if zh:
+        st.markdown(f"**释义**：{zh}")
     card_html = render_card_cached(lemma)
     if card_html:
         with st.expander("📇 完整 Anki 卡片", expanded=True):
@@ -993,11 +1000,11 @@ def speak_prompt(word) -> None:
     if PROMPT_TYPE in ("fr_audio", "fr_text"):
         speak(word["text"], voice=voice, rate=rate)
     else:
-        speak(VOCAB.get(word["text"], {}).get("zh", ""), voice=ZH_VOICE, rate=rate)
+        speak(word_zh(word["text"]), voice=ZH_VOICE, rate=rate)
 
 
 def _finalize_speak(word, heard, ok) -> None:
-    zh = VOCAB.get(word["text"], {}).get("zh", "")
+    zh = word_zh(word["text"])
     record_attempt(word["id"], heard or "（口述）", ok, "pron")
     st.session_state.round_results[word["id"]] = ok
     st.session_state.graded = True
@@ -1037,7 +1044,7 @@ def _speak_autopoll() -> None:
 def render_speak(word) -> None:
     """念法语：备妥变绿 → 念 → 读后台转写 → 比对 → 报对错。支持自动模式（轮询+倒计时）。"""
     target = word["text"]
-    zh = VOCAB.get(target, {}).get("zh", "")
+    zh = word_zh(target)
 
     c1, c2, c3 = st.columns(3)
     if c1.button("上一题", disabled=st.session_state.index <= 1):
@@ -1119,7 +1126,7 @@ def render_speak(word) -> None:
 
 def _finalize(word, fr_ans, zh_ans, fr_ok, zh_ok) -> None:
     """落定一次作答（按模式合并字段），写反馈与本轮对错。"""
-    zh_gloss = VOCAB.get(word["text"], {}).get("zh", "")
+    zh_gloss = word_zh(word["text"])
     parts, oks = [], []
     if "fr" in ANSWER_FIELDS:
         parts.append((fr_ans or "").strip() or "（空）")
@@ -1243,7 +1250,7 @@ def render_practice() -> None:
             f"每 {st.session_state.batch_size_round} 个歇一下 · 还剩 {total - current_no} 词"
         )
 
-        zh_gloss = VOCAB.get(current_word["text"], {}).get("zh", "")
+        zh_gloss = word_zh(current_word["text"])
 
         last_wrong = get_last_wrong_answer(current_word["id"])
         if last_wrong:
@@ -1477,7 +1484,7 @@ def render_word_panel():
             "义": ["" for _ in rows],
             "音": ["" for _ in rows],
             "变": ["" for _ in rows],
-            "翻译": [VOCAB.get(r["text"], {}).get("zh", "") for r in rows],
+            "翻译": [word_zh(r["text"]) for r in rows],
             "状态": ["已隐藏" if r["id"] in hidden_ids else "" for r in rows],
         }
     )
@@ -1715,7 +1722,7 @@ def render_checkpoint_panel() -> None:
 
 def render_card_view(lemma: str) -> None:
     """主窗口里开卷看某个词的完整 Anki 卡。"""
-    zh = VOCAB.get(lemma, {}).get("zh", "")
+    zh = word_zh(lemma)
     st.subheader(f"📖 {lemma}" + (f" — {zh}" if zh else ""))
     # 软删除：点词进来这里就能隐藏/恢复（不用进听写流程）
     _ids = get_ids_for_lemmas([lemma])

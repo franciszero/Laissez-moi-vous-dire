@@ -193,10 +193,13 @@ def load_all_vocab(base_dir):
                 by_lesson[lesson].append(lemma)
             slot = by_lemma.setdefault(
                 lemma, {"pos": e.get("pos", ""), "zh": e.get("zh", ""),
-                        "example": e.get("example"), "fem": e.get("fem"), "lessons": []}
+                        "example": e.get("example"), "fem": e.get("fem"),
+                        "zh_by_lesson": {}, "lessons": []}
             )
             if lesson not in slot["lessons"]:
                 slot["lessons"].append(lesson)
+            if e.get("zh"):                       # 保留每课各自的释义（同词跨课可能不同）
+                slot["zh_by_lesson"][lesson] = e["zh"]
             if not slot["zh"] and e.get("zh"):
                 slot["zh"] = e["zh"]
             if not slot.get("fem") and e.get("fem"):

@@ -158,3 +158,20 @@ def test_load_all_vocab(tmp_path):
     assert by_lesson["L18"] == ["aussi", "la confiture"]
     assert by_lesson["L17"] == ["aussi"]
     assert by_lesson["考试集"] == ["bonjour"]   # 任意文件夹名都能识别
+
+
+def test_load_all_vocab_keeps_per_lesson_zh(tmp_path):
+    # 同一个词在不同课释义不同时，要分课保留（避免按字母序的课覆盖掉当前课的释义）
+    base = tmp_path / "本地录屏课"
+    (base / "L20").mkdir(parents=True)
+    (base / "L21").mkdir(parents=True)
+    (base / "L20" / "vocab.json").write_text(json.dumps(
+        [{"lemma": "volontiers", "pos": "expr", "zh": "宁愿，通常", "lesson": "L20"}],
+        ensure_ascii=False), "utf-8")
+    (base / "L21" / "vocab.json").write_text(json.dumps(
+        [{"lemma": "volontiers", "pos": "expr", "zh": "乐意地，很愿意", "lesson": "L21"}],
+        ensure_ascii=False), "utf-8")
+    by_lemma, _ = load_all_vocab(base)
+    per = by_lemma["volontiers"]["zh_by_lesson"]
+    assert per["L20"] == "宁愿，通常"
+    assert per["L21"] == "乐意地，很愿意"
