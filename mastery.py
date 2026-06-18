@@ -54,7 +54,8 @@ def mastery_score(attempts, now: datetime | None = None) -> float:
     return wilson_lower(c, t)
 
 
-BASE_SKILLS = ("form", "meaning", "pron")   # 形(听写/默写) / 义(词义) / 音(发音)，每个词都适用
+BASE_SKILLS = ("transcribe", "produce", "meaning", "pron")
+# 听写(音→拼写) / 产出(意→拼写) / 理解(法→意) / 音(发音)，每个词都适用
 SKILLS = BASE_SKILLS + ("morph",)           # 变(阴阳性变形)：仅有阴性的词适用
 
 

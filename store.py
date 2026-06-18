@@ -167,5 +167,5 @@ def get_attempts_for_words(word_ids):
     conn.close()
     out: dict = {}
     for wid, ok, ts, skill in rows:
-        out.setdefault(wid, []).append((bool(ok), ts, skill or "form"))
+        out.setdefault(wid, []).append((bool(ok), ts, skill or "transcribe"))
     return out

@@ -35,11 +35,11 @@ from store import (
 
 ZH_VOICE = "Tingting"  # macOS 中文嗓音（听/看中文模式用）
 MODES = {
-    "听法语 → 敲法语": ("fr_audio", ("fr",), "form"),
-    "听法语 → 敲中文": ("fr_audio", ("zh",), "meaning"),
-    "听法语 → 敲法语+中文": ("fr_audio", ("fr", "zh"), "both"),
-    "听中文 → 敲法语": ("zh_audio", ("fr",), "form"),
-    "看中文 → 敲法语": ("zh_text", ("fr",), "form"),
+    "听法语 → 敲法语": ("fr_audio", ("fr",), "transcribe"),   # 听写：音→拼写
+    "听法语 → 敲中文": ("fr_audio", ("zh",), "meaning"),       # 理解：法→意
+    "听法语 → 敲法语+中文": ("fr_audio", ("fr", "zh"), "both"), # 听写+理解
+    "听中文 → 敲法语": ("zh_audio", ("fr",), "produce"),       # 产出：意→拼写
+    "看中文 → 敲法语": ("zh_text", ("fr",), "produce"),        # 产出：意→拼写
     "听中文 → 念法语": ("zh_audio", ("speak_fr",), "pron"),
     "看中文 → 念法语": ("zh_text", ("speak_fr",), "pron"),
     "看法语 → 念法语": ("fr_text", ("speak_fr",), "pron"),
@@ -296,11 +296,14 @@ def init_db() -> None:
     )
     """)
 
-    # 迁移：给 attempts 加 skill 列（form 形/meaning 义/pron 音），旧数据 NULL 视作 form
+    # 迁移：给 attempts 加 skill 列
     try:
         cur.execute("ALTER TABLE attempts ADD COLUMN skill TEXT")
     except sqlite3.OperationalError:
         pass
+
+    # 迁移：旧的 "form" 与 NULL（当年听写/产出混记，且默认模式是 听法语→敲法语）→ 归为「听写」transcribe
+    cur.execute("UPDATE attempts SET skill = 'transcribe' WHERE skill = 'form' OR skill IS NULL")
 
     # 迁移：给 words 加 hidden 列（软删除：不用背的词隐藏出流程，数据保留）
     try:
@@ -1137,7 +1140,7 @@ def _finalize(word, fr_ans, zh_ans, fr_ok, zh_ok) -> None:
     combined = " / ".join(parts)
     correct = bool(oks) and all(oks)
     if SKILL == "both":
-        record_attempt(word["id"], (fr_ans or "").strip() or "（空）", bool(fr_ok), "form")
+        record_attempt(word["id"], (fr_ans or "").strip() or "（空）", bool(fr_ok), "transcribe")
         record_attempt(word["id"], (zh_ans or "").strip() or "（空）", bool(zh_ok), "meaning")
     else:
         record_attempt(word["id"], combined, correct, SKILL)
@@ -1350,7 +1353,7 @@ def render_practice() -> None:
                     st.session_state.show_answer = True
                     if not st.session_state.graded:   # 看答案 = 算一次错（防抄答案刷分）
                         if SKILL == "both":
-                            record_attempt(current_word["id"], "（看了答案）", False, "form")
+                            record_attempt(current_word["id"], "（看了答案）", False, "transcribe")
                             record_attempt(current_word["id"], "（看了答案）", False, "meaning")
                         else:
                             record_attempt(current_word["id"], "（看了答案）", False, SKILL)
@@ -1446,9 +1449,9 @@ def render_word_panel():
         return None
     st.markdown("**📋 词表**")
     st.caption(
-        "形=听写、义=词义、音=发音、变=阴阳性变形，各列按掌握度上色（灰→黄→绿）；"
-        "「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果；🙈+灰行=已隐藏（不进练习）。"
-        "点任一词 → 主区可「隐藏 / 恢复」。"
+        "听=听写(听法语写法语)、产=产出(看/听中文写法语)、义=理解(听法语写中文)、音=发音、变=阴阳性变形，"
+        "各列按掌握度上色（灰→黄→绿）；「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果；"
+        "🙈+灰行=已隐藏（不进练习）。点任一词 → 主区可「隐藏 / 恢复」。"
     )
     show_trans = st.checkbox("显示翻译", value=False, key="show_trans")
     pool = st.session_state.pool
@@ -1480,7 +1483,8 @@ def render_word_panel():
     df = pd.DataFrame(
         {
             "词": [_disp(r) for r in rows],
-            "形": ["" for _ in rows],
+            "听": ["" for _ in rows],
+            "产": ["" for _ in rows],
             "义": ["" for _ in rows],
             "音": ["" for _ in rows],
             "变": ["" for _ in rows],
@@ -1498,7 +1502,8 @@ def render_word_panel():
         skills = mastery_mod.BASE_SKILLS + (("morph",) if has_fem else ())
         cmap = {
             "词": mastery_mod.mastery_color(mastery_mod.overall(sc, skills=skills)),
-            "形": mastery_mod.mastery_color(sc.get("form", 0.0)),
+            "听": mastery_mod.mastery_color(sc.get("transcribe", 0.0)),
+            "产": mastery_mod.mastery_color(sc.get("produce", 0.0)),
             "义": mastery_mod.mastery_color(sc.get("meaning", 0.0)),
             "音": mastery_mod.mastery_color(sc.get("pron", 0.0)),
             "变": mastery_mod.mastery_color(sc.get("morph", 0.0)) if has_fem else "#f5f5f5",
@@ -1508,7 +1513,7 @@ def render_word_panel():
             for c in row.index
         ]
 
-    cols = ["词", "形", "义", "音", "变", "翻译", "状态"] if show_trans else ["词", "形", "义", "音", "变", "状态"]
+    cols = ["词", "听", "产", "义", "音", "变", "翻译", "状态"] if show_trans else ["词", "听", "产", "义", "音", "变", "状态"]
     event = st.dataframe(
         df.style.apply(_style, axis=1),
         column_order=cols,
