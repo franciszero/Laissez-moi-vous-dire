@@ -44,6 +44,16 @@ cd 听写
 
 刷新页面即出现在「选课」。完整字段可参考 `../L18/vocab.json`。
 
+### 批量查重追加词条
+
+准备一个 JSON 数组，每条至少包含 `lemma`、`pos`、`zh`，然后运行：
+
+```bash
+python3 scripts/merge_vocab.py --vocab ../L20/vocab.json --input batch.json
+```
+
+工具按规范化后的 lemma 去重：目标课已有词条保持原样，只追加缺词；同一批次的冲突释义会直接报错。重复运行结果不变。`--input -` 可从标准输入读取。
+
 ---
 
 ## 答完显示的词义来自哪（三档，自动降级）
