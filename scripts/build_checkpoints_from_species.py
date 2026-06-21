@@ -116,8 +116,99 @@ def _checkpoint(row: dict, lesson: str, seen: set[str], overrides: dict) -> dict
     return card
 
 
+def _apply_checkpoint_groups(
+    cards: list[dict], lesson: str, groups_path: Path, seen_ids: set[str]
+) -> list[dict]:
+    config = json.loads(groups_path.read_text(encoding="utf-8"))
+    groups = config.get("groups") or []
+    by_species = {card["source_species"]: card for card in cards}
+    original_order = {card["id"]: i for i, card in enumerate(cards)}
+    assigned_species: set[str] = set()
+    group_ids: set[str] = set()
+    practice_ids: set[str] = set()
+
+    for group in groups:
+        group_id = str(group.get("id") or "").strip()
+        label = str(group.get("label") or "").strip()
+        if not group_id or not label:
+            raise SystemExit("Checkpoint groups invalid: every group needs id and label")
+        if group_id in group_ids:
+            raise SystemExit(f"Checkpoint groups invalid: duplicate group id '{group_id}'")
+        group_ids.add(group_id)
+        group_order = int(group.get("order", 0))
+
+        for member in group.get("species") or []:
+            species_label = str(member.get("source_species") or "").strip()
+            if species_label not in by_species:
+                raise SystemExit(
+                    f"Checkpoint groups invalid: unknown species '{species_label}'"
+                )
+            if species_label in assigned_species:
+                raise SystemExit(
+                    f"Checkpoint groups invalid: duplicate species member '{species_label}'"
+                )
+            assigned_species.add(species_label)
+            by_species[species_label].update(
+                {
+                    "study_group": group_id,
+                    "study_group_label": label,
+                    "study_group_order": group_order,
+                    "study_order": int(member.get("order", 0)),
+                }
+            )
+
+        for practice in group.get("practice_cards") or []:
+            short_id = str(practice.get("id") or "").strip()
+            if short_id in practice_ids:
+                raise SystemExit(
+                    f"Checkpoint groups invalid: duplicate practice card id '{short_id}'"
+                )
+            practice_ids.add(short_id)
+            if not short_id or not practice.get("front") or not practice.get("back"):
+                raise SystemExit(
+                    f"Checkpoint groups invalid: practice card '{short_id}' needs id/front/back"
+                )
+            if not isinstance(practice.get("answer"), str) or not practice["answer"].strip():
+                raise SystemExit(
+                    f"Checkpoint groups invalid: practice card '{short_id}' needs one machine answer"
+                )
+            card_id = f"{lesson}:practice:{slugify(short_id)}"
+            if card_id in seen_ids:
+                raise SystemExit(f"Checkpoint groups invalid: duplicate checkpoint id '{card_id}'")
+            seen_ids.add(card_id)
+            cards.append(
+                {
+                    "type": "checkpoint",
+                    "id": card_id,
+                    "front": practice["front"],
+                    "back": practice["back"],
+                    "answer": practice["answer"],
+                    "primary_class": practice.get("primary_class") or "grammar_rule",
+                    "tags": practice.get("tags") or ["conjugation", "teacher_corrected_error"],
+                    "french_items": practice.get("french_items") or [],
+                    "evidence_refs": practice.get("evidence_refs") or [],
+                    "parent_group": group_id,
+                    "study_group": group_id,
+                    "study_group_label": label,
+                    "study_group_order": group_order,
+                    "study_order": int(practice.get("order", 0)),
+                    "curated": True,
+                }
+            )
+
+    return sorted(
+        cards,
+        key=lambda card: (
+            card.get("study_group_order", 1_000_000),
+            card.get("study_order", original_order.get(card["id"], 0)),
+            original_order.get(card["id"], len(original_order)),
+        ),
+    )
+
+
 def build_manifest(lesson: str, source: str, species_path: Path, vocab_path: Path,
-                   overrides_path: Path | None = None) -> dict:
+                   overrides_path: Path | None = None,
+                   checkpoint_groups_path: Path | None = None) -> dict:
     species = json.loads(species_path.read_text(encoding="utf-8"))
     reviewed = [row for row in species if row.get("adjudication_status") == "reviewed"]
     overrides: dict = {}
@@ -125,6 +216,8 @@ def build_manifest(lesson: str, source: str, species_path: Path, vocab_path: Pat
         overrides = json.loads(overrides_path.read_text(encoding="utf-8"))
     seen_ids: set[str] = set()
     cards = [_checkpoint(row, lesson, seen_ids, overrides) for row in reviewed]
+    if checkpoint_groups_path:
+        cards = _apply_checkpoint_groups(cards, lesson, checkpoint_groups_path, seen_ids)
     data = {
         "lesson": lesson,
         "source": source,
@@ -161,6 +254,7 @@ def main() -> None:
     ap.add_argument("--species-json", required=True)
     ap.add_argument("--vocab-json", required=True)
     ap.add_argument("--overrides", default=None, help="人工精修卡 JSON（按 species_label 覆盖 front/back/answer）")
+    ap.add_argument("--checkpoint-groups", default=None, help="可选学习组与补充机判卡 JSON")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 
@@ -171,6 +265,7 @@ def main() -> None:
         Path(args.species_json).expanduser().resolve(),
         Path(args.vocab_json).expanduser().resolve(),
         Path(args.overrides).expanduser().resolve() if args.overrides else None,
+        Path(args.checkpoint_groups).expanduser().resolve() if args.checkpoint_groups else None,
     )
     out = Path(args.out).expanduser()
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

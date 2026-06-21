@@ -1632,6 +1632,8 @@ _CAT_RULES = [
 
 def _checkpoint_category(card: dict) -> str:
     """知识点类别（中文）：用于在列表里按语法主题查找，而不是机判/自评这种判分方式。"""
+    if card.get("study_group_label"):
+        return str(card["study_group_label"])
     tags = set(card.get("tags") or [])
     for tag, cat in _CAT_RULES:
         if tag in tags:
