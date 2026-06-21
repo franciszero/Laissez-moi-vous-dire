@@ -96,25 +96,33 @@ def test_l22_future_tense_group_is_contiguous_in_native_table(tmp_path):
         shutil.copy2(db_path, backup_path)
 
     try:
+        data = manifest.load("../L22/manifest.json")
+        cards = manifest.checkpoints(data)
+        expected_count = len(cards)
+        group_count = sum(c.get("study_group") == "future-tense-system" for c in cards)
+
         at = AppTest.from_file("app.py", default_timeout=10)
         at.run()
         assert not at.exception
 
         at.selectbox(key="sel_lesson").set_value("L22").run()
         assert not at.exception
-        knowledge_button = next((b for b in at.button if b.label == "📝 知识点（109）"), None)
+        knowledge_button = next(
+            (b for b in at.button if b.label == f"📝 知识点（{expected_count}）"), None
+        )
         assert knowledge_button is not None
 
         knowledge_button.click().run()
         assert not at.exception
-        assert "📝 知识点 1/109" in [s.value for s in at.subheader]
+        assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
         assert at.dataframe
 
         table = at.dataframe[0].value
-        assert list(table["类别"].iloc[:25]) == ["将来时系统"] * 25
-        assert "futur simple" in table["知识点"].iloc[5]
-        assert "conditionnel présent" in table["知识点"].iloc[6]
-        assert table["类别"].iloc[25] != "将来时系统"
+        assert list(table["类别"].iloc[:group_count]) == ["时态变位系统"] * group_count
+        assert any("构成 01/22" in title for title in table["知识点"].iloc[:group_count])
+        assert any("词根 09/09" in title for title in table["知识点"].iloc[:group_count])
+        assert any("辨析 07/07" in title for title in table["知识点"].iloc[:group_count])
+        assert table["类别"].iloc[group_count] != "时态变位系统"
     finally:
         if backup_path.exists():
             shutil.copy2(backup_path, db_path)

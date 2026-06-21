@@ -168,9 +168,14 @@ def _apply_checkpoint_groups(
                 raise SystemExit(
                     f"Checkpoint groups invalid: practice card '{short_id}' needs id/front/back"
                 )
-            if not isinstance(practice.get("answer"), str) or not practice["answer"].strip():
+            answer = practice.get("answer")
+            if "answer" not in practice or (
+                answer is not None
+                and (not isinstance(answer, str) or not answer.strip())
+            ):
                 raise SystemExit(
-                    f"Checkpoint groups invalid: practice card '{short_id}' needs one machine answer"
+                    f"Checkpoint groups invalid: practice card '{short_id}' needs "
+                    "answer=null for self-review or one non-empty machine answer"
                 )
             card_id = f"{lesson}:practice:{slugify(short_id)}"
             if card_id in seen_ids:
@@ -182,7 +187,7 @@ def _apply_checkpoint_groups(
                     "id": card_id,
                     "front": practice["front"],
                     "back": practice["back"],
-                    "answer": practice["answer"],
+                    "answer": answer,
                     "primary_class": practice.get("primary_class") or "grammar_rule",
                     "tags": practice.get("tags") or ["conjugation", "teacher_corrected_error"],
                     "french_items": practice.get("french_items") or [],
@@ -254,7 +259,7 @@ def main() -> None:
     ap.add_argument("--species-json", required=True)
     ap.add_argument("--vocab-json", required=True)
     ap.add_argument("--overrides", default=None, help="人工精修卡 JSON（按 species_label 覆盖 front/back/answer）")
-    ap.add_argument("--checkpoint-groups", default=None, help="可选学习组与补充机判卡 JSON")
+    ap.add_argument("--checkpoint-groups", default=None, help="可选学习组与补充机判/自评卡 JSON")
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
 

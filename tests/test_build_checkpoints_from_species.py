@@ -67,6 +67,42 @@ def test_checkpoint_groups_sort_cards_and_preserve_species_coverage(tmp_path):
     assert data["coverage"]["expected_species_count"] == 2
 
 
+def test_checkpoint_groups_allow_self_review_practice_cards(tmp_path):
+    species_path = _write_json(tmp_path / "species.json", [_species("alpha")])
+    vocab_path = _write_json(tmp_path / "vocab.json", _vocab())
+    groups_path = _write_json(
+        tmp_path / "groups.json",
+        {
+            "groups": [
+                {
+                    "id": "tense-contrast",
+                    "label": "时态变位系统",
+                    "order": 10,
+                    "species": [],
+                    "practice_cards": [
+                        {
+                            "id": "future-vs-conditional",
+                            "order": 10,
+                            "front": "futur simple 和 conditionnel 怎样区分？",
+                            "back": "词根相同，词尾系统不同。",
+                            "answer": None,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    data = builder.build_manifest(
+        "Lx", "source.md", species_path, vocab_path, checkpoint_groups_path=groups_path
+    )
+    cards = builder.manifest.checkpoints(data)
+
+    assert cards[0]["id"] == "Lx:practice:future-vs-conditional"
+    assert cards[0]["answer"] is None
+    assert cards[0]["study_group_label"] == "时态变位系统"
+
+
 def test_checkpoint_groups_reject_unknown_species(tmp_path):
     species_path = _write_json(tmp_path / "species.json", [_species("alpha")])
     vocab_path = _write_json(tmp_path / "vocab.json", _vocab())
