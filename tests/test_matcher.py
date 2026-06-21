@@ -20,6 +20,15 @@ def test_check_fr_accent_strict():
     assert not check_fr("", "épicier")
 
 
+def test_check_fr_apostrophe_style_unified():
+    # 键盘直撇号 ' 判等于词表/Anki 里的弯撇号 ’（只在判分归一，不改任何存储的词）
+    assert check_fr("être à l'heure", "être à l’heure")
+    assert check_fr("être à l’heure", "être à l'heure")
+    assert check_fr("l'eau", "l’eau")
+    # 撇号归一不能放松重音严格性
+    assert not check_fr("etre à l'heure", "être à l’heure")
+
+
 def test_check_zh_exact_and_senses():
     assert check_zh("水", "水") is True
     assert check_zh("增长", "增长，提高") is True     # 多义并列，命中其一

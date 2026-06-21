@@ -10,8 +10,14 @@ import unicodedata
 
 # ---------- 法语 ----------
 
+# 撇号风格只在「判分时」归一：键盘只能打直撇号 '，而词表/DB/Anki/课文里常是排版
+# 弯撇号 ’。lemma 是 DB、vocab.json、Anki 三处共用的关联键，绝不能改存储——只在比较
+# 这一步把两种撇号视作等价即可。重音仍严格：épicier ≠ epicier。
+_APOS = str.maketrans({"’": "'", "‘": "'", "ʼ": "'"})
+
+
 def norm_fr(t: str) -> str:
-    return " ".join((t or "").strip().lower().split())
+    return " ".join((t or "").strip().lower().translate(_APOS).split())
 
 
 def check_fr(answer: str, target: str) -> bool:
