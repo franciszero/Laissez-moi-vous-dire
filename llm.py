@@ -110,11 +110,13 @@ def grade(chinese_prompt: str, french_answer: str, rubric: str) -> dict:
 中文提示：{chinese_prompt}
 学生法语：{french_answer}
 评分要点：{rubric}
-若答案正确也要给自然度更高的版本；不要因可接受的表达差异误判。"""
+若答案正确也要给自然度更高的版本；不要因可接受的表达差异误判。
+判定必须基于“学生法语”的实际字符，不要把你建议改正后的形式误当成学生原答案。"""
     try:
         data = _request("/chat/completions", {
             "model": "default", "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1, "max_tokens": 600,
+            "response_format": {"type": "json_object"},
         }, timeout=180)
         text = data["choices"][0]["message"]["content"]
         return _parse_json(text)

@@ -47,6 +47,38 @@ MODES = {
     "看法语 → 念法语": ("fr_text", ("speak_fr",), "pron"),
     "看阳性 → 写阴性": ("fr_morph", ("fem",), "morph"),
 }
+LLM_EXERCISES = [
+    {
+        "id": "L22:ai:sentence-core-after-work", "label": "造句流程 1/2 · 先写正确主干",
+        "cue": "他们找到工作后，会在巴黎定居。",
+        "instruction": "第一轮先降复杂度：只写“他们会在巴黎定居”这个最小正确主干。",
+        "rubric": "检查一个简单、完整、自然的 futur simple 主干；参考：Ils s'installeront à Paris. 不要求本轮表达“找到工作后”。",
+    },
+    {
+        "id": "L22:ai:sentence-complex-after-work", "label": "造句流程 2/2 · 再升级完整句",
+        "cue": "他们找到工作后，会在巴黎定居。",
+        "instruction": "第二轮保留刚才的主干，再补“找到工作后”的先后关系。",
+        "rubric": "必须完整表达两个未来动作的先后：先找到工作用 futur antérieur，后定居用 futur simple；参考：Quand ils auront trouvé un travail, ils s'installeront à Paris.",
+    },
+    {
+        "id": "L22:ai:translate-opposer", "label": "长句整句翻译 1/3",
+        "cue": "人们常常把外省生活和首都生活对立起来。",
+        "instruction": "先找 on + opposer A à B，再处理副词和 celle 指代。",
+        "rubric": "检查 opposer A à B、imparfait、volontiers 与 celle 指代 la vie；参考：On opposait volontiers la vie de province à celle de la capitale.",
+    },
+    {
+        "id": "L22:ai:translate-media", "label": "长句整句翻译 2/3",
+        "cue": "媒体的发展使外省摆脱了孤立。",
+        "instruction": "先写主语中心，再用 tirer A de B 接骨架。",
+        "rubric": "检查主语 le développement des médias、passé composé 和 tirer A de B；参考：Le développement des médias a tiré la province de son isolement.",
+    },
+    {
+        "id": "L22:ai:translate-decentralisation", "label": "长句整句翻译 3/3",
+        "cue": "地方分权被提上日程。",
+        "instruction": "把“被提上日程”作为固定补语整体表达。",
+        "rubric": "检查固定表达 être à l'ordre du jour；参考：La décentralisation est à l'ordre du jour.",
+    },
+]
 
 
 DB_PATH = "dictation.db"
@@ -981,6 +1013,11 @@ with st.sidebar:
         st.session_state.llm_loaded = False
         st.session_state.llm_load_attempted = False
         st.session_state.llm_last_active = time.time()
+        st.session_state.llm_index = 0
+        st.session_state.pop("llm_result", None)
+        st.session_state.pop("llm_grade_error", None)
+        for _exercise in LLM_EXERCISES:
+            ensure_checkpoint(_exercise["id"], "L22")
         st.session_state.pop("llm_error", None)
         st.rerun()
     st.caption("错词=做错过的；到期=遗忘曲线该复习的（答对延长间隔）；变形=有阴阳性的词；知识点=老师讲的非单词要点；AI 精练=自由造句批改，进入时才加载模型。")
@@ -1892,8 +1929,70 @@ def _llm_idle_watch() -> None:
     st.caption(f"模型会在闲置 {max(0, int((LLM_IDLE_SECONDS - idle) / 60) + 1)} 分钟后自动卸载。")
 
 
+def _render_llm_exercise() -> None:
+    i = st.session_state.get("llm_index", 0)
+    if i >= len(LLM_EXERCISES):
+        st.success(f"✅ 本轮 AI 精练完成（{len(LLM_EXERCISES)} 项）")
+        if st.button("再练一轮"):
+            st.session_state.llm_index = 0
+            st.session_state.llm_last_active = time.time()
+            st.session_state.pop("llm_result", None)
+            st.rerun()
+        return
+
+    exercise = LLM_EXERCISES[i]
+    st.markdown(f"**{exercise['label']}**　{i + 1}/{len(LLM_EXERCISES)}")
+    st.info(exercise["cue"])
+    st.caption(exercise["instruction"])
+    with st.form(f"llm_form_{exercise['id']}"):
+        answer = st.text_area("你的法语整句：", key=f"llm_answer_{exercise['id']}")
+        submitted = st.form_submit_button("交给本地 AI 批改", type="primary")
+    if submitted:
+        st.session_state.llm_last_active = time.time()
+        st.session_state.pop("llm_grade_error", None)
+        st.session_state.pop("llm_result", None)
+        if not answer.strip():
+            st.session_state.llm_grade_error = "请先写一句法语。"
+        else:
+            with st.spinner("批改中…"):
+                try:
+                    st.session_state.llm_result = llm.grade(
+                        exercise["cue"], answer.strip(), exercise["rubric"]
+                    )
+                except llm.LLMError as exc:
+                    st.session_state.llm_grade_error = str(exc)
+
+    if st.session_state.get("llm_grade_error"):
+        st.error(st.session_state.llm_grade_error)
+    result = st.session_state.get("llm_result")
+    if not result:
+        return
+    if result.get("parse_error"):
+        st.warning("模型没有按 JSON 返回，下面显示原文；请你据此终判。")
+        st.code(result.get("raw", ""))
+    else:
+        verdict = result.get("判定", "")
+        (st.success if verdict == "对" else st.warning if verdict == "部分" else st.error)(
+            f"AI 建议判定：{verdict or '未给出'}"
+        )
+        st.write(f"**错在哪：** {result.get('错在哪', '—')}")
+        st.write(f"**改进建议：** {result.get('改进建议', '—')}")
+        st.write(f"**更好的版本：** {result.get('更好的版本', '—')}")
+    st.caption("AI 只提供建议；SRS 结果以你的终判为准。")
+    right, wrong = st.columns(2)
+    final_ok = right.button("✅ 我对", type="primary", key="llm_self_right")
+    final_wrong = wrong.button("❌ 我错", key="llm_self_wrong")
+    if final_ok or final_wrong:
+        update_checkpoint(exercise["id"], final_ok)
+        st.session_state.llm_index = i + 1
+        st.session_state.llm_last_active = time.time()
+        st.session_state.pop("llm_result", None)
+        st.session_state.pop("llm_grade_error", None)
+        st.rerun()
+
+
 def render_llm_practice() -> None:
-    """AI 精练独立视图；Phase B 先提供可验证的按需加载生命周期。"""
+    """AI 精练独立视图：LLM 建议、用户终判、现有 SRS 排期。"""
     st.subheader("🤖 AI 精练")
     if st.button("↩︎ 退出并释放模型", type="primary"):
         _leave_llm()
@@ -1917,7 +2016,7 @@ def render_llm_practice() -> None:
 
     if st.session_state.get("llm_loaded"):
         st.success(f"本地模型已加载（本次 {st.session_state.get('llm_load_seconds', 0):.1f} 秒）")
-        st.info("模型只在本页驻留。自由造句与整句翻译练习将在下一阶段接入。")
+        _render_llm_exercise()
         _llm_idle_watch()
     else:
         st.error(st.session_state.get("llm_error", "本地模型尚未加载。"))

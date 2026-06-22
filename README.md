@@ -2,6 +2,8 @@
 
 本地 Streamlit 小工具：用 macOS `say` 朗读法语词，你听写；答完显示词义（词表中文 + Anki 卡 + macOS 词典兜底）。支持「学习模式（按课）」和「考试模式（错题/到期，本地 SRS）」。
 
+L22 另有「🤖 AI 精练」：用 Hermes 当前配置的本地 rapid-mlx 模型批改自由造句/整句翻译。模型只在进入该页时加载；退出、切换视图或闲置 5 分钟会自动卸载。AI 只给建议，SRS 对错由你最终确认。
+
 ## 运行
 
 ```bash
@@ -83,4 +85,4 @@ python3 -m pytest -q          # 跑单元测试
 python3 scripts/build_vocab.py  # 从 L18/source/*.tsv 重新生成 L17/L18 的 vocab.json
 ```
 
-模块划分：`vocab.py`（清洗/解析/加载词表）、`anki.py`（只读 AnkiConnect）、`macdict.py`（macOS 词典兜底）、`store.py`（sqlite 导入/查询）、`app.py`（Streamlit 编排）。
+模块划分：`vocab.py`（清洗/解析/加载词表）、`anki.py`（只读 AnkiConnect）、`llm.py`（按需 rapid-mlx 批改）、`macdict.py`（macOS 词典兜底）、`store.py`（sqlite 导入/查询）、`app.py`（Streamlit 编排）。

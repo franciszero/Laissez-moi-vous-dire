@@ -24,8 +24,13 @@ def test_configured_model_reads_hermes_default(tmp_path, monkeypatch):
 def test_grade_returns_structured_result(monkeypatch):
     result = {"判定": "部分", "错在哪": "配合", "改进建议": "改词尾", "更好的版本": "Je l'ai vue."}
     response = {"choices": [{"message": {"content": json.dumps(result, ensure_ascii=False)}}]}
-    monkeypatch.setattr(llm.urllib.request, "urlopen", lambda *_a, **_k: _Response(json.dumps(response).encode()))
+    payloads = []
+    def urlopen(req, **_kwargs):
+        payloads.append(json.loads(req.data))
+        return _Response(json.dumps(response).encode())
+    monkeypatch.setattr(llm.urllib.request, "urlopen", urlopen)
     assert llm.grade("我看见了她", "Je l'ai vu.", "检查直接宾语提前配合") == result
+    assert payloads[0]["response_format"] == {"type": "json_object"}
 
 
 def test_grade_preserves_raw_text_when_json_is_invalid(monkeypatch):

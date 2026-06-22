@@ -52,7 +52,7 @@ def test_l22_tense_system_deck_is_complete_and_ordered():
     grouped_cards = [c for c in cards if c.get("study_group") == "future-tense-system"]
     by_id = {c["id"]: c for c in cards}
 
-    assert len(cards) == 141
+    assert len(cards) == 188
     assert len(species_cards) == 103
     assert len({c["source_species"] for c in species_cards}) == 103
     assert len(practice_cards) == 38
@@ -62,6 +62,17 @@ def test_l22_tense_system_deck_is_complete_and_ordered():
     assert sum(c.get("answer") is not None for c in practice_cards) == 34
     assert sum(c.get("answer") is None for c in practice_cards) == 4
     assert OLD_PILOT_IDS.isdisjoint(by_id)
+
+    phase_a_counts = {
+        group: sum(c.get("study_group") == group for c in cards)
+        for group in ("pronoun-automation", "sentence-skeleton", "sentence-building-process")
+    }
+    assert phase_a_counts == {
+        "pronoun-automation": 26,
+        "sentence-skeleton": 18,
+        "sentence-building-process": 3,
+    }
+    assert sum(c.get("answer") is None for c in cards if c.get("study_group") == "sentence-building-process") == 3
 
     assert {card_id: by_id[card_id]["answer"] for card_id in ANCHOR_ANSWERS} == ANCHOR_ANSWERS
     root_cards = [c for c in practice_cards if c["id"].startswith("L22:practice:root-")]
