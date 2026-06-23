@@ -212,7 +212,19 @@ def _conj_card(spec: dict, lesson: str) -> dict:
             tenses.append({"key": k, "label": conjugate.TENSE_LABELS[k], "kind": "single", "answer": c[k]})
         else:
             tenses.append({"key": k, "label": conjugate.TENSE_LABELS[k], "kind": "six", "forms": list(c[k])})
-    return {"id": f"{lesson}:conj:{spec['verb']}", "verb": spec["verb"], "zh": spec.get("zh", ""), "tenses": tenses}
+    return {"id": f"{lesson}:conj:{spec['verb']}", "kind": "conj",
+            "verb": spec["verb"], "zh": spec.get("zh", ""), "tenses": tenses}
+
+
+def _lesson_cards(lesson: str) -> list[dict]:
+    """一课的全部知识卡：checkpoint 卡 + 动词变位卡（卡即数据，统一一个 deck）。"""
+    cards = list(load_checkpoints().get(lesson, []))
+    for _s in load_conjugations().get(lesson, []):
+        try:
+            cards.append(_conj_card(_s, lesson))
+        except KeyError:
+            pass
+    return cards
 
 
 @st.cache_data(show_spinner=False)
@@ -1115,7 +1127,7 @@ with st.sidebar:
         start_lesson_morph(chosen_lesson, LESSONS, batch_size)
         st.rerun()
 
-    _cards = load_checkpoints().get(chosen_lesson, [])
+    _cards = _lesson_cards(chosen_lesson)            # checkpoint 卡 + 动词变位卡，统一一个 deck
     if st.button(f"📝 知识点（{len(_cards)}）", disabled=not _cards):
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
@@ -1755,8 +1767,11 @@ def render_word_panel():
 
 def _checkpoint_title(card: dict) -> str:
     """短标题给侧栏列表用：优先 species 名，其次正面第一行。"""
-    title = card.get("source_species") or (card.get("front") or "").splitlines()[0]
-    title = " ".join(str(title).split())
+    if card.get("kind") == "conj":
+        return f"{card.get('verb', '')}（变位）"
+    raw = card.get("source_species") or (card.get("front") or "")
+    lines = str(raw).splitlines()
+    title = " ".join((lines[0] if lines else "").split())
     return title[:86] + ("…" if len(title) > 86 else "")
 
 
@@ -1857,6 +1872,8 @@ _CAT_RULES = [
 
 def _checkpoint_category(card: dict) -> str:
     """知识点类别（中文）：用于在列表里按语法主题查找，而不是机判/自评这种判分方式。"""
+    if card.get("kind") == "conj":
+        return "变位"
     if card.get("study_group_label"):
         return str(card["study_group_label"])
     tags = set(card.get("tags") or [])
@@ -2010,6 +2027,12 @@ def render_checkpoint() -> None:
             st.rerun()
         return
     card = cards[i]
+    if card.get("kind") == "conj":                    # 动词变位卡：同一 deck，按卡型分派
+        _render_conj_card(card, i, len(cards),
+                          set_index=lambda n: _set_checkpoint_index(n),
+                          on_exit=lambda: st.session_state.update(cp_active=False),
+                          exit_label="↩︎ 退出知识点")
+        return
     st.subheader(f"📝 知识点 {i + 1}/{len(cards)}")
     if st.session_state.get("cp_label"):
         st.caption(st.session_state.cp_label)
@@ -2288,20 +2311,14 @@ def render_llm_practice() -> None:
             st.rerun()
 
 
-def render_conjugation() -> None:
-    """动词变位卡：整张范式手敲填空、逐格核对（答案键来自 conjugate.py，确定性）。"""
-    st.subheader("🔠 动词变位")
-    if st.button("↩︎ 退出变位", key="conj_exit"):
-        st.session_state.conj_active = False
+def _render_conj_card(card: dict, i: int, total: int, *, set_index, on_exit, exit_label: str) -> None:
+    """渲染一张动词变位卡（整张范式手敲填空、逐格核对）。nav/退出由调用方注入，
+    使它能同时服务 cp deck（cp_index）和旧独立流程（conj_index）。答案键来自 conjugate.py。"""
+    if st.button(exit_label, key="conj_exit"):
+        on_exit()
         st.session_state.pop("conj_results", None)
         st.rerun()
-    cards = st.session_state.get("conj_cards") or []
-    if not cards:
-        st.caption("这一课还没有动词变位卡。")
-        return
-    i = max(0, min(st.session_state.get("conj_index", 0), len(cards) - 1))
-    card = cards[i]
-    st.markdown(f"### {card['verb']}　<small>{card['zh']}</small>　{i + 1}/{len(cards)}", unsafe_allow_html=True)
+    st.markdown(f"### {card['verb']}　<small>{card['zh']}</small>　{i + 1}/{total}", unsafe_allow_html=True)
     st.caption("主语已给出，填空敲出每个变位；提交后逐格核对，多敲几遍就记住了。")
     _render_checkpoint_lookback(card["id"])
 
@@ -2354,11 +2371,29 @@ def render_conjugation() -> None:
                 st.caption("　".join(parts))
         b1, b2, b3 = st.columns(3)
         if b1.button("← 上一个", disabled=i == 0, key="conj_prev"):
-            st.session_state.conj_index = i - 1; st.session_state.pop("conj_results", None); st.rerun()
+            set_index(i - 1); st.session_state.pop("conj_results", None); st.rerun()
         if b2.button("🔁 再敲一遍", key="conj_redo"):
             st.session_state.pop("conj_results", None); st.rerun()
-        if b3.button("下一个 ▶", disabled=i >= len(cards) - 1, key="conj_next"):
-            st.session_state.conj_index = i + 1; st.session_state.pop("conj_results", None); st.rerun()
+        if b3.button("下一个 ▶", disabled=i >= total - 1, key="conj_next"):
+            set_index(i + 1); st.session_state.pop("conj_results", None); st.rerun()
+
+
+def render_conjugation() -> None:
+    """旧的独立动词变位流程（D2b 将移除；卡已并入知识点 deck）。"""
+    st.subheader("🔠 动词变位")
+    cards = st.session_state.get("conj_cards") or []
+    if not cards:
+        st.caption("这一课还没有动词变位卡。")
+        return
+    i = max(0, min(st.session_state.get("conj_index", 0), len(cards) - 1))
+
+    def _set(n):
+        st.session_state.conj_index = n
+
+    def _exit():
+        st.session_state.conj_active = False
+
+    _render_conj_card(cards[i], i, len(cards), set_index=_set, on_exit=_exit, exit_label="↩︎ 退出变位")
 
 
 # 左侧原生边栏词表（像 GPT/Claude 主页：自带折叠按钮，折叠后主区满宽）
@@ -2391,7 +2426,7 @@ elif st.session_state.get("conj_active"):
 else:
     # 统一"今天复习"：词 + 知识点卡 一处可见（product-story-critique：到期不该碎成两处）
     _due_words = len(get_due_wrong_words(due_only=True))
-    _due_cp_cards = _due_checkpoint_cards(load_checkpoints().get(chosen_lesson, []))
+    _due_cp_cards = _due_checkpoint_cards(_lesson_cards(chosen_lesson))
     if _due_words or _due_cp_cards:
         bc = st.columns([3, 1, 1])
         bc[0].info(f"📅 今天到期：**{_due_words}** 个词 · **{len(_due_cp_cards)}** 张知识点卡（{chosen_lesson}）")

@@ -96,9 +96,12 @@ def test_l22_future_tense_group_is_contiguous_in_native_table(tmp_path):
         shutil.copy2(db_path, backup_path)
 
     try:
+        import json as _json
         data = manifest.load("../L22/manifest.json")
         cards = manifest.checkpoints(data)
-        expected_count = len(cards)
+        # 知识点 deck 现在 = checkpoint 卡 + 动词变位卡（D2：卡即数据，动词变位并入同一 deck）
+        _conj = _json.load(open("../L22/conjugation.json"))["verbs"]
+        expected_count = len(cards) + len(_conj)
         group_count = sum(c.get("study_group") == "future-tense-system" for c in cards)
 
         at = AppTest.from_file("app.py", default_timeout=10)
