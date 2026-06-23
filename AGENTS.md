@@ -24,3 +24,19 @@ Do not re-derive or overturn decisions recorded there. In particular: lessons ow
 their own cards (cross-lesson knowledge = duplicate + light pointer, NOT a shared
 ID/registry/mastery layer), and apostrophes are normalized only at match time
 (`matcher.norm_fr`), never in stored `lemma`/data.
+
+# LLM-Graded Practice Gate
+
+Before building or changing any feature where an LLM grades / gives feedback on
+**open-ended user production** (free composition, translation, short answer — e.g.
+the AI 精练 module), read and follow:
+
+`/Users/francis/.codex/skills/llm-graded-practice/SKILL.md`
+
+Core: authored reference (not model-self-generated at runtime); model grades against
+it while code owns the deterministic diff/coloring (verify spans are literal
+substrings, drop hallucinations); open status set (not a whitelist); minimal edit;
+human 3-state final say; pick the model by a typed offline gold-set bakeoff, never
+vibes; the LLM is a sparring partner, not a textbook. Does NOT apply to fixed
+machine-graded / self-judge cards (those use the species→manifest pipeline +
+`bounded-extraction` rule 6).

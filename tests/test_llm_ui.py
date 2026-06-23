@@ -20,7 +20,7 @@ def test_ai_view_loads_on_entry_and_unloads_on_exit(tmp_path, monkeypatch):
         at = AppTest.from_file("app.py", default_timeout=10).run()
         assert not at.exception
 
-        next(b for b in at.button if b.label == "🤖 AI 精练（加载本地模型）").click().run()
+        next(b for b in at.button if b.label.startswith("🤖 AI 造句")).click().run()
         assert not at.exception
         assert "🤖 AI 精练" in [s.value for s in at.subheader]
         assert any("本地模型已加载" in s.value for s in at.success)
@@ -31,7 +31,7 @@ def test_ai_view_loads_on_entry_and_unloads_on_exit(tmp_path, monkeypatch):
         assert "🤖 AI 精练" not in [s.value for s in at.subheader]
 
         at.selectbox(key="sel_lesson").set_value("L22").run()
-        next(b for b in at.button if b.label == "🤖 AI 精练（加载本地模型）").click().run()
+        next(b for b in at.button if b.label.startswith("🤖 AI 造句")).click().run()
         next(b for b in at.button if b.label.startswith("📝 知识点（")).click().run()
         assert not at.exception
         assert unloaded == [True, True]
@@ -50,7 +50,7 @@ def test_ai_view_unloads_after_idle_timeout(monkeypatch):
     monkeypatch.setattr(llm, "unload", lambda: unloaded.append(True))
 
     at = AppTest.from_file("app.py", default_timeout=10).run()
-    next(b for b in at.button if b.label == "🤖 AI 精练（加载本地模型）").click().run()
+    next(b for b in at.button if b.label.startswith("🤖 AI 造句")).click().run()
     at.session_state.llm_last_active = 0
     at.run()
 
@@ -68,13 +68,14 @@ def test_ai_feedback_requires_user_final_judgment_before_srs(tmp_path, monkeypat
     monkeypatch.setattr(llm, "load", lambda: 0.1)
     monkeypatch.setattr(llm, "is_loaded", lambda: True)
     monkeypatch.setattr(llm, "unload", lambda: None)
-    monkeypatch.setattr(llm, "grade", lambda *args: calls.append(args) or {
-        "判定": "对", "错在哪": "无", "改进建议": "保持", "更好的版本": "Ils s'installeront à Paris."
-    })
+    monkeypatch.setattr(llm, "chat", lambda *a, **k: calls.append(a) or (
+        '{"片段":[{"片段":"Ils s\'installeront à Paris.","维度":"句式","状态":"正确","依据":"主干正确"}],'
+        '"最小修正":"Ils s\'installeront à Paris.","更自然版":"Ils s\'installeront à Paris.","总判定":"对"}'
+    ))
 
     try:
         at = AppTest.from_file("app.py", default_timeout=10).run()
-        next(b for b in at.button if b.label == "🤖 AI 精练（加载本地模型）").click().run()
+        next(b for b in at.button if b.label.startswith("🤖 AI 造句")).click().run()
         at.text_area[0].set_value("Ils s'installeront à Paris.")
         next(b for b in at.button if b.label == "交给本地 AI 批改").click().run()
 

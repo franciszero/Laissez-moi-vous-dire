@@ -1,0 +1,98 @@
+[
+  {
+    "note": "用户真实错误：把过去/将来变位混了，且越界写了从句",
+    "spec": {
+      "target": "他们会在巴黎定居。",
+      "candidates": [{"zh": "定居", "fr": ["s'installer", "s'établir"]}],
+      "conjugations": [{"verb": "s'installer", "form": "futur simple", "value": "ils s'installeront"}],
+      "structures": ["S + s'installer + à + 城市"],
+      "references": ["Ils s'installeront à Paris."],
+      "required": ["futur simple", "城市名前用 à"],
+      "ignore": "本轮不要求表达“找到工作后”"
+    },
+    "answer": "Quand ils travaillai, ils habitais en Paris.",
+    "should_flag": ["travaillai", "habitais", "en Paris"],
+    "should_accept": [],
+    "expected_overall": "错"
+  },
+  {
+    "note": "标准正确句",
+    "spec": {
+      "target": "他们会在巴黎定居。",
+      "candidates": [{"zh": "定居", "fr": ["s'installer"]}],
+      "conjugations": [{"verb": "s'installer", "form": "futur simple", "value": "ils s'installeront"}],
+      "structures": ["S + s'installer + à + 城市"],
+      "references": ["Ils s'installeront à Paris."],
+      "required": ["futur simple", "城市名前用 à"],
+      "ignore": ""
+    },
+    "answer": "Ils s'installeront à Paris.",
+    "should_flag": [],
+    "should_accept": ["s'installeront", "à Paris"],
+    "expected_overall": "对"
+  },
+  {
+    "note": "可接受变体：elles 代替 ils，不应判错",
+    "spec": {
+      "target": "他们会在巴黎定居。",
+      "candidates": [{"zh": "他们/她们", "fr": ["ils", "elles"]}, {"zh": "定居", "fr": ["s'installer"]}],
+      "conjugations": [{"verb": "s'installer", "form": "futur simple", "value": "elles s'installeront"}],
+      "structures": ["S + s'installer + à + 城市"],
+      "references": ["Ils s'installeront à Paris.", "Elles s'installeront à Paris."],
+      "required": ["futur simple", "城市名前用 à"],
+      "ignore": ""
+    },
+    "answer": "Elles s'installeront à Paris.",
+    "should_flag": [],
+    "should_accept": ["Elles", "s'installeront"],
+    "expected_overall": "对"
+  },
+  {
+    "note": "固定表达正确",
+    "spec": {
+      "target": "地方分权被提上日程。",
+      "candidates": [{"zh": "地方分权", "fr": ["la décentralisation"]}, {"zh": "被提上日程", "fr": ["être à l'ordre du jour"]}],
+      "conjugations": [{"verb": "être", "form": "présent", "value": "est"}],
+      "structures": ["S + être à l'ordre du jour"],
+      "references": ["La décentralisation est à l'ordre du jour."],
+      "required": ["固定表达 être à l'ordre du jour"],
+      "ignore": ""
+    },
+    "answer": "La décentralisation est à l'ordre du jour.",
+    "should_flag": [],
+    "should_accept": ["à l'ordre du jour"],
+    "expected_overall": "对"
+  },
+  {
+    "note": "固定表达里 du 写成 de",
+    "spec": {
+      "target": "地方分权被提上日程。",
+      "candidates": [{"zh": "被提上日程", "fr": ["être à l'ordre du jour"]}],
+      "conjugations": [{"verb": "être", "form": "présent", "value": "est"}],
+      "structures": ["S + être à l'ordre du jour"],
+      "references": ["La décentralisation est à l'ordre du jour."],
+      "required": ["固定表达 être à l'ordre du jour"],
+      "ignore": ""
+    },
+    "answer": "La décentralisation est à l'ordre de jour.",
+    "should_flag": ["de jour"],
+    "should_accept": [],
+    "expected_overall": "部分"
+  },
+  {
+    "note": "opposer 的介词错：à 写成 de",
+    "spec": {
+      "target": "人们常常把外省生活和首都生活对立起来。",
+      "candidates": [{"zh": "对立", "fr": ["opposer"]}, {"zh": "外省", "fr": ["la province"]}, {"zh": "首都", "fr": ["la capitale"]}],
+      "conjugations": [{"verb": "opposer", "form": "imparfait", "value": "on opposait"}],
+      "structures": ["On + opposer A à B（imparfait）"],
+      "references": ["On opposait volontiers la vie de province à celle de la capitale."],
+      "required": ["opposer A à B", "imparfait"],
+      "ignore": ""
+    },
+    "answer": "On opposait la vie de province de celle de la capitale.",
+    "should_flag": ["de celle"],
+    "should_accept": ["On opposait"],
+    "expected_overall": "部分"
+  }
+]

@@ -9,6 +9,25 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 import manifest  # noqa: E402
 
 
+def statement_drill_gaps(cards) -> list[str]:
+    """陈述必配题：列出"全自评、无机判题"的学习组——可能是只加了陈述没配应用题。
+    （AI 产出题组天然全自评，会被列出来供确认是否属"自由产出"豁免，不是硬错。）"""
+    groups: dict = {}
+    for c in cards:
+        g = c.get("study_group")
+        if not g:
+            continue
+        slot = groups.setdefault(g, {"machine": 0, "self": 0, "label": c.get("study_group_label") or g})
+        if (c.get("answer") or "").strip():
+            slot["machine"] += 1
+        else:
+            slot["self"] += 1
+    return [
+        f'{v["label"]}（{g}）：{v["self"]} 张全自评、0 机判 —— 确认是否缺应用题（或属自由产出豁免）'
+        for g, v in groups.items() if v["self"] and not v["machine"]
+    ]
+
+
 def main(p: str) -> None:
     d = manifest.load(p)
     print(f"# 覆盖报告 {d.get('lesson')}  source={d.get('source')}")
@@ -31,6 +50,10 @@ def main(p: str) -> None:
     print("缺口/问题:", "无 ✅" if not probs else f"{len(probs)} 条")
     for x in probs:
         print(" -", x)
+    gaps = statement_drill_gaps(manifest.checkpoints(d))
+    print("陈述必配题:", "无全自评组 ✅" if not gaps else f"{len(gaps)} 组待确认")
+    for g in gaps:
+        print("  ?", g)
 
 
 if __name__ == "__main__":

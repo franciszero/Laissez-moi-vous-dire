@@ -52,7 +52,7 @@ def test_l22_tense_system_deck_is_complete_and_ordered():
     grouped_cards = [c for c in cards if c.get("study_group") == "future-tense-system"]
     by_id = {c["id"]: c for c in cards}
 
-    assert len(cards) == 188
+    assert len(cards) == 194
     assert len(species_cards) == 103
     assert len({c["source_species"] for c in species_cards}) == 103
     assert len(practice_cards) == 38
@@ -73,6 +73,12 @@ def test_l22_tense_system_deck_is_complete_and_ordered():
         "sentence-building-process": 3,
     }
     assert sum(c.get("answer") is None for c in cards if c.get("study_group") == "sentence-building-process") == 3
+
+    # 指示代词·两组辨析（celui 组 vs ce 组）：6 张 = 4 机判 + 2 自评
+    demo_cards = [c for c in cards if c.get("study_group") == "demonstrative-two-groups"]
+    assert len(demo_cards) == 6
+    assert sum(c.get("answer") is not None for c in demo_cards) == 4
+    assert sum(c.get("answer") is None for c in demo_cards) == 2
 
     assert {card_id: by_id[card_id]["answer"] for card_id in ANCHOR_ANSWERS} == ANCHOR_ANSWERS
     root_cards = [c for c in practice_cards if c["id"].startswith("L22:practice:root-")]

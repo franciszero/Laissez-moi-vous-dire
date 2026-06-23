@@ -33,6 +33,16 @@ def configured_model() -> str:
     return model
 
 
+def _session_model() -> str:
+    """本会话用的模型：可用 env 覆盖以做 bakeoff，否则用 Hermes 默认。"""
+    return os.environ.get("DICTATION_LLM_MODEL", "").strip() or configured_model()
+
+
+def _thinking_enabled() -> bool:
+    """thinking 是会话级实验配置（codex 评审 #4：不在每次调用间切换模型）。"""
+    return os.environ.get("DICTATION_LLM_THINKING", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def _request(path: str, payload: dict | None = None, timeout: float = 3):
     body = None if payload is None else json.dumps(payload, ensure_ascii=False).encode()
     req = urllib.request.Request(
@@ -59,11 +69,13 @@ def load(timeout: float = 600) -> float:
     if is_loaded():
         raise LLMError("8000 端口已有非本模块启动的模型服务；请先关闭它再重试。")
     started = time.monotonic()
+    serve_args = ["rapid-mlx", "serve", _session_model(), "--port", "8000",
+                  "--served-model-name", "default"]
+    if not _thinking_enabled():
+        serve_args.append("--no-thinking")
     with LOG.open("w", encoding="utf-8") as log:
         _process = subprocess.Popen(
-            ["rapid-mlx", "serve", configured_model(), "--port", "8000",
-             "--served-model-name", "default", "--no-thinking"],
-            stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
+            serve_args, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
         )
     while time.monotonic() - started < timeout:
         if _process.poll() is not None:
@@ -93,33 +105,15 @@ def unload() -> None:
         proc.wait(timeout=5)
 
 
-def _parse_json(text: str) -> dict:
-    clean = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    try:
-        value = json.loads(clean)
-        if isinstance(value, dict):
-            return value
-    except json.JSONDecodeError:
-        pass
-    return {"raw": text, "parse_error": True}
-
-
-def grade(chinese_prompt: str, french_answer: str, rubric: str) -> dict:
-    prompt = f"""你是严格但简洁的法语老师。只输出一个 JSON 对象，不要 Markdown。
-字段必须是：判定（对/部分/错）、错在哪、改进建议、更好的版本。
-中文提示：{chinese_prompt}
-学生法语：{french_answer}
-评分要点：{rubric}
-若答案正确也要给自然度更高的版本；不要因可接受的表达差异误判。
-判定必须基于“学生法语”的实际字符，不要把你建议改正后的形式误当成学生原答案。"""
+def chat(prompt: str, timeout: float = 180) -> str:
+    """发一条 prompt 给本地模型，返回原始文本内容（prompt 构造与解析在 aigrade）。"""
     try:
         data = _request("/chat/completions", {
             "model": "default", "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.1, "max_tokens": 600,
+            "temperature": 0.1, "max_tokens": 1200,
             "response_format": {"type": "json_object"},
-        }, timeout=180)
-        text = data["choices"][0]["message"]["content"]
-        return _parse_json(text)
+        }, timeout=timeout)
+        return data["choices"][0]["message"]["content"]
     except (OSError, ValueError, KeyError, IndexError, urllib.error.URLError) as exc:
         raise LLMError(f"本地模型批改失败：{exc}") from exc
 
