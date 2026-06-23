@@ -1156,25 +1156,6 @@ with st.sidebar:
         st.session_state.cp_label = f"知识点·到期 · {chosen_lesson}"
         st.session_state.pop("cp_feedback", None)
         st.rerun()
-    _conj = load_conjugations().get(chosen_lesson, [])
-    if st.button(f"🔠 动词变位（{len(_conj)}）", disabled=not _conj,
-                 help="老师讲过的规则动词，整张范式手敲填空、逐格核对"):
-        _leave_overlays()
-        save_setting("last_lesson", chosen_lesson)
-        _conj_cards = []
-        for _s in _conj:
-            try:
-                _conj_cards.append(_conj_card(_s, chosen_lesson))
-            except KeyError:
-                pass
-        for _cd in _conj_cards:
-            ensure_checkpoint(_cd["id"], chosen_lesson)
-        st.session_state.cp_active = False
-        st.session_state.conj_active = True
-        st.session_state.conj_cards = _conj_cards
-        st.session_state.conj_index = 0
-        st.session_state.pop("conj_results", None)
-        st.rerun()
     if st.button(f"🤖 AI 造句·翻译批改（{len(LLM_EXERCISES)} 题，进入加载本地模型）"):
         st.session_state.cp_active = False
         st.session_state.conj_active = False
@@ -2378,24 +2359,6 @@ def _render_conj_card(card: dict, i: int, total: int, *, set_index, on_exit, exi
             set_index(i + 1); st.session_state.pop("conj_results", None); st.rerun()
 
 
-def render_conjugation() -> None:
-    """旧的独立动词变位流程（D2b 将移除；卡已并入知识点 deck）。"""
-    st.subheader("🔠 动词变位")
-    cards = st.session_state.get("conj_cards") or []
-    if not cards:
-        st.caption("这一课还没有动词变位卡。")
-        return
-    i = max(0, min(st.session_state.get("conj_index", 0), len(cards) - 1))
-
-    def _set(n):
-        st.session_state.conj_index = n
-
-    def _exit():
-        st.session_state.conj_active = False
-
-    _render_conj_card(cards[i], i, len(cards), set_index=_set, on_exit=_exit, exit_label="↩︎ 退出变位")
-
-
 # 左侧原生边栏词表（像 GPT/Claude 主页：自带折叠按钮，折叠后主区满宽）
 with st.sidebar:
     st.divider()
@@ -2404,9 +2367,6 @@ with st.sidebar:
         _selected = None
     elif st.session_state.get("cp_active"):
         render_checkpoint_panel()
-        _selected = None
-    elif st.session_state.get("conj_active"):
-        st.caption("🔠 动词变位运行中；退出后恢复词表。")
         _selected = None
     else:
         _selected = render_word_panel()
@@ -2421,8 +2381,6 @@ if st.session_state.get("llm_active"):
     render_llm_practice()
 elif st.session_state.get("cp_active"):
     render_checkpoint()
-elif st.session_state.get("conj_active"):
-    render_conjugation()
 else:
     # 统一"今天复习"：词 + 知识点卡 一处可见（product-story-critique：到期不该碎成两处）
     _due_words = len(get_due_wrong_words(due_only=True))
