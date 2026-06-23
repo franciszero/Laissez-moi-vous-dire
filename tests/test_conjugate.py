@@ -35,6 +35,27 @@ def test_ger_spelling_softening():
     assert c["imparfait"] == ("changeais", "changeais", "changeait", "changions", "changiez", "changeaient")
 
 
-def test_unknown_type_rejected():
+def test_irregular_known_paradigms():
+    etre = conjugate.conjugate("être", "irregular")
+    assert etre["présent"] == ("suis", "es", "est", "sommes", "êtes", "sont")
+    assert etre["futur_simple"] == ("serai", "seras", "sera", "serons", "serez", "seront")
+    assert etre["participe_passé"] == "été"
+    avoir = conjugate.conjugate("avoir", "irregular")
+    assert avoir["présent"] == ("ai", "as", "a", "avons", "avez", "ont")
+    assert avoir["participe_passé"] == "eu"
+    aller = conjugate.conjugate("aller", "irregular")
+    assert aller["présent"] == ("vais", "vas", "va", "allons", "allez", "vont")
+    assert aller["futur_simple"][0] == "irai"
+    # futur_proche 由 aller 现在时 + 不定式拼出
+    assert aller["futur_proche"] == ("vais aller", "vas aller", "va aller",
+                                     "allons aller", "allez aller", "vont aller")
+    assert conjugate.conjugate("faire", "irregular")["présent"][4] == "faites"
+    assert conjugate.conjugate("voir", "irregular")["futur_simple"][0] == "verrai"
+    assert conjugate.conjugate("pouvoir", "irregular")["présent"] == \
+        ("peux", "peux", "peut", "pouvons", "pouvez", "peuvent")
+    assert conjugate.conjugate("vouloir", "irregular")["futur_simple"][0] == "voudrai"
+
+
+def test_unknown_irregular_rejected():
     with pytest.raises(KeyError):
-        conjugate.conjugate("aller", "irregular")  # 不规则不在此生成
+        conjugate.conjugate("zorglub", "irregular")  # 无核对过的表 → 拒绝（不瞎编）
