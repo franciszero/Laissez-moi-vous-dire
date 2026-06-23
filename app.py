@@ -1025,13 +1025,16 @@ if not st.session_state.get("restored"):
             restore_round(_saved)
 
 
-def _leave_llm() -> None:
+def _leave_overlays() -> None:
+    """离开所有覆盖式复习视图（AI 精练 / 知识点 / 动词变位），回到词练习。"""
     if st.session_state.get("llm_loaded"):
         llm.unload()
     st.session_state.llm_active = False
     st.session_state.llm_loaded = False
     st.session_state.llm_load_attempted = False
     st.session_state.pop("llm_error", None)
+    st.session_state.cp_active = False
+    st.session_state.conj_active = False
 
 
 st.title("法语听写复习器")
@@ -1086,7 +1089,7 @@ with st.sidebar:
     _n_due = len(get_due_wrong_words(due_only=True, only_ids=_scope))
 
     if st.button(f"开始这一课（{_n_all} 词）", type="primary"):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         if start_lesson_round(chosen_lesson, LESSONS, batch_size):
             st.rerun()
@@ -1095,26 +1098,26 @@ with st.sidebar:
 
     cw, cd = st.columns(2)
     if cw.button(f"错词（{_n_wrong}）", disabled=_n_wrong == 0):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         start_lesson_review(chosen_lesson, LESSONS, False, batch_size)
         st.rerun()
     if cd.button(f"到期（{_n_due}）", disabled=_n_due == 0):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         start_lesson_review(chosen_lesson, LESSONS, True, batch_size)
         st.rerun()
 
     _n_fem = len(_fem_ids(chosen_lesson, LESSONS))
     if st.button(f"变形（{_n_fem}）", disabled=_n_fem == 0):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         start_lesson_morph(chosen_lesson, LESSONS, batch_size)
         st.rerun()
 
     _cards = load_checkpoints().get(chosen_lesson, [])
     if st.button(f"📝 知识点（{len(_cards)}）", disabled=not _cards):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         for _c in _cards:
             ensure_checkpoint(_c["id"], chosen_lesson)
@@ -1129,7 +1132,7 @@ with st.sidebar:
     _due_cp = _due_checkpoint_cards(_cards) if _cards else []
     if st.button(f"🔁 知识点·到期（{len(_due_cp)}）", disabled=not _due_cp,
                  help="只复习遗忘曲线到期的知识点（含没练过的），最早到期优先"):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         for _c in _due_cp:
             ensure_checkpoint(_c["id"], chosen_lesson)
@@ -1144,7 +1147,7 @@ with st.sidebar:
     _conj = load_conjugations().get(chosen_lesson, [])
     if st.button(f"🔠 动词变位（{len(_conj)}）", disabled=not _conj,
                  help="老师讲过的规则动词，整张范式手敲填空、逐格核对"):
-        _leave_llm()
+        _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         _conj_cards = []
         for _s in _conj:
@@ -2254,7 +2257,7 @@ def render_llm_practice() -> None:
     """AI 精练独立视图：LLM 建议、用户终判、现有 SRS 排期。"""
     st.subheader("🤖 AI 精练")
     if st.button("↩︎ 退出并释放模型", type="primary"):
-        _leave_llm()
+        _leave_overlays()
         st.rerun()
 
     if st.session_state.get("llm_loaded") and not llm.is_loaded():
@@ -2386,13 +2389,26 @@ elif st.session_state.get("cp_active"):
 elif st.session_state.get("conj_active"):
     render_conjugation()
 else:
-    # 遗忘曲线提醒：今天全部课程有多少词到期复习（一键开练）
-    _due_today = len(get_due_wrong_words(due_only=True))
-    if _due_today:
-        bc1, bc2 = st.columns([4, 1])
-        bc1.info(f"📅 今天有 **{_due_today}** 个词到期复习（遗忘曲线）")
-        if bc2.button("开始复习", key="due_banner"):
+    # 统一"今天复习"：词 + 知识点卡 一处可见（product-story-critique：到期不该碎成两处）
+    _due_words = len(get_due_wrong_words(due_only=True))
+    _due_cp_cards = _due_checkpoint_cards(load_checkpoints().get(chosen_lesson, []))
+    if _due_words or _due_cp_cards:
+        bc = st.columns([3, 1, 1])
+        bc[0].info(f"📅 今天到期：**{_due_words}** 个词 · **{len(_due_cp_cards)}** 张知识点卡（{chosen_lesson}）")
+        if _due_words and bc[1].button("复习到期词", key="due_words"):
+            _leave_overlays()
             start_review_round(due_only=True, batch_size=batch_size)
+            st.rerun()
+        if _due_cp_cards and bc[2].button("复习到期卡", key="due_cards"):
+            for _c in _due_cp_cards:
+                ensure_checkpoint(_c["id"], chosen_lesson)
+            st.session_state.conj_active = False
+            st.session_state.cp_active = True
+            st.session_state.cp_cards = _due_cp_cards
+            st.session_state.cp_index = 0
+            st.session_state.cp_show_back = False
+            st.session_state.cp_label = f"今天到期 · {chosen_lesson}"
+            st.session_state.pop("cp_feedback", None)
             st.rerun()
 
     if _show_card:
