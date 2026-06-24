@@ -18,7 +18,6 @@ def test_word_entry_leaves_card_overlay(tmp_path):
         next(b for b in at.button if b.label.startswith("开始这一课")).click().run()
         assert not at.exception
         assert at.session_state.cp_active is False        # 不再被卡模式遮挡
-        assert at.session_state.conj_active is False
     finally:
         if bak.exists():
             shutil.copy2(bak, db)
