@@ -2254,8 +2254,10 @@ def _render_production_card(card: dict, i: int, total: int, *, set_index, on_exi
             st.session_state.pop(_k, None)
         st.rerun()
     st.markdown(f"**🤖 {card['label']}**　{i + 1}/{total}")
-    st.info(card["cue"])
+    st.info(card.get("target") or card["cue"])           # 本轮真正要写的（1/2 轮=只写主干）
     st.caption(card["instruction"])
+    if card.get("target") and card["target"] != card.get("cue"):
+        st.caption(f"完整句（下一轮再加）：{card['cue']}")
     if st.session_state.get("llm_loaded"):
         st.caption("🟢 本地模型已加载（闲置约 5 分钟自动卸载）")
     has_result = bool(st.session_state.get("llm_result"))
