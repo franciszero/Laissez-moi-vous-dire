@@ -224,6 +224,9 @@ def _lesson_cards(lesson: str) -> list[dict]:
             cards.append(_conj_card(_s, lesson))
         except KeyError:
             pass
+    for _ex in LLM_EXERCISES:                          # AI 产出题并入同一 deck（kind=production）
+        if _ex["id"].startswith(lesson + ":"):
+            cards.append({**_ex, "kind": "production"})
     return cards
 
 
@@ -1725,6 +1728,8 @@ def _checkpoint_title(card: dict) -> str:
     """短标题给侧栏列表用：优先 species 名，其次正面第一行。"""
     if card.get("kind") == "conj":
         return f"{card.get('verb', '')}（变位）"
+    if card.get("kind") == "production":
+        return f"AI产出 · {card.get('label', '')}"
     raw = card.get("source_species") or (card.get("front") or "")
     lines = str(raw).splitlines()
     title = " ".join((lines[0] if lines else "").split())
@@ -1830,6 +1835,8 @@ def _checkpoint_category(card: dict) -> str:
     """知识点类别（中文）：用于在列表里按语法主题查找，而不是机判/自评这种判分方式。"""
     if card.get("kind") == "conj":
         return "变位"
+    if card.get("kind") == "production":
+        return "产出"
     if card.get("study_group_label"):
         return str(card["study_group_label"])
     tags = set(card.get("tags") or [])
@@ -1989,6 +1996,11 @@ def render_checkpoint() -> None:
                           on_exit=lambda: st.session_state.update(cp_active=False),
                           exit_label="↩︎ 退出知识点")
         return
+    if card.get("kind") == "production":              # AI 自由产出题：同一 deck，提交时按需加载模型
+        _render_production_card(card, i, len(cards),
+                               set_index=lambda n: _set_checkpoint_index(n),
+                               on_exit=lambda: st.session_state.update(cp_active=False))
+        return
     st.subheader(f"📝 知识点 {i + 1}/{len(cards)}")
     if st.session_state.get("cp_label"):
         st.caption(st.session_state.cp_label)
@@ -2071,7 +2083,8 @@ def render_checkpoint() -> None:
 
 @st.fragment(run_every=15)
 def _llm_idle_watch() -> None:
-    if not (st.session_state.get("llm_active") and st.session_state.get("llm_loaded")):
+    # 引擎级兜底：只要模型加载着就盯（不论在哪个视图），闲置即卸载，最大泄漏=闲置阈值
+    if not st.session_state.get("llm_loaded"):
         return
     idle = time.time() - st.session_state.get("llm_last_active", 0)
     if idle >= LLM_IDLE_SECONDS:
@@ -2232,6 +2245,83 @@ def _render_llm_exercise() -> None:
         st.rerun()
 
 
+def _render_production_card(card: dict, i: int, total: int, *, set_index, on_exit) -> None:
+    """AI 自由产出题作为 deck 里的一种卡（kind=production）：提交时才按需加载本地模型。
+    判分仍走 aigrade（人工规范 + 代码确定性 + 三态终判）；模型只给建议。"""
+    if st.button("↩︎ 退出知识点", key="prod_exit"):
+        on_exit()
+        for _k in ("llm_result", "llm_graded_answer", "llm_grade_error", "llm_hint_level"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+    st.markdown(f"**🤖 {card['label']}**　{i + 1}/{total}")
+    st.info(card["cue"])
+    st.caption(card["instruction"])
+    if st.session_state.get("llm_loaded"):
+        st.caption("🟢 本地模型已加载（闲置约 5 分钟自动卸载）")
+    has_result = bool(st.session_state.get("llm_result"))
+    _render_lookback(card["id"])
+    hint_level = _render_hints(card)
+    if has_result:
+        _render_spec_review(card)
+
+    with st.form(f"prod_{card['id']}"):
+        answer = st.text_area("你的法语整句：", key=f"prod_ans_{card['id']}")
+        submitted = st.form_submit_button("交给本地 AI 批改（首次会加载模型 ~10 秒）", type="primary")
+    if submitted:
+        st.session_state.llm_last_active = time.time()
+        st.session_state.llm_hint_level = hint_level
+        st.session_state.pop("llm_grade_error", None)
+        st.session_state.pop("llm_result", None)
+        if not answer.strip():
+            st.session_state.llm_grade_error = "请先写一句法语。"
+        else:
+            try:
+                if not st.session_state.get("llm_loaded"):
+                    with st.spinner("加载本地模型中…首次 ~10 秒"):
+                        llm.load()
+                        st.session_state.llm_loaded = True
+                with st.spinner("批改中…"):
+                    raw = llm.chat(aigrade.build_prompt(card, answer.strip()))
+                    st.session_state.llm_result = aigrade.normalize_result(raw)
+                    st.session_state.llm_graded_answer = answer.strip()
+                    try:
+                        st.session_state.llm_model = llm._session_model()
+                    except llm.LLMError:
+                        st.session_state.llm_model = ""
+            except llm.LLMError as exc:
+                st.session_state.llm_grade_error = str(exc)
+        st.rerun()
+
+    if st.session_state.get("llm_grade_error"):
+        st.error(st.session_state.llm_grade_error)
+    result = st.session_state.get("llm_result")
+    if not result:
+        return
+    _render_grade_result(result, st.session_state.get("llm_graded_answer", ""))
+    assisted = st.session_state.get("llm_hint_level", "无") != "无"
+    st.caption("AI 只提供建议；SRS 结果以你的终判为准。" +
+               ("（你用了提示，「我对」不计为独立通过）" if assisted else ""))
+    c_ok, c_wrong, c_unsure = st.columns(3)
+    final_ok = c_ok.button("✅ 我对", type="primary", key="prod_right")
+    final_wrong = c_wrong.button("❌ 我错", key="prod_wrong")
+    final_unsure = c_unsure.button("🤔 拿不准", key="prod_unsure")
+    if final_ok or final_wrong or final_unsure:
+        verdict = "我对" if final_ok else "我错" if final_wrong else "拿不准"
+        if final_wrong:
+            update_checkpoint(card["id"], False)
+        elif final_ok and not assisted:
+            update_checkpoint(card["id"], True)
+        save_ai_attempt(
+            card["id"], st.session_state.get("llm_graded_answer", ""), verdict=verdict,
+            minimal=result.get("最小修正", ""), natural=result.get("更自然版", ""),
+            feedback=result.get("spans", []), hint_level=st.session_state.get("llm_hint_level", "无"),
+            model=st.session_state.get("llm_model", ""))
+        for _k in ("llm_result", "llm_graded_answer", "llm_grade_error", "llm_hint_level"):
+            st.session_state.pop(_k, None)
+        set_index(i + 1)
+        st.rerun()
+
+
 def render_llm_practice() -> None:
     """AI 精练独立视图：LLM 建议、用户终判、现有 SRS 排期。"""
     st.subheader("🤖 AI 精练")
@@ -2258,7 +2348,6 @@ def render_llm_practice() -> None:
     if st.session_state.get("llm_loaded"):
         st.success(f"本地模型已加载（本次 {st.session_state.get('llm_load_seconds', 0):.1f} 秒）")
         _render_llm_exercise()
-        _llm_idle_watch()
     else:
         st.error(st.session_state.get("llm_error", "本地模型尚未加载。"))
         if st.button("🔄 重试加载"):
@@ -2384,3 +2473,6 @@ else:
 # 每次渲染后把当前一轮存档，刷新/重开能续上
 if st.session_state.get("pool"):
     persist_round()
+
+# 引擎级闲置卸载兜底：只要本地模型加载着就盯（不论当前哪个视图），闲置即卸载
+_llm_idle_watch()

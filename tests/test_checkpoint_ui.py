@@ -99,9 +99,8 @@ def test_l22_future_tense_group_is_contiguous_in_native_table(tmp_path):
         import json as _json
         data = manifest.load("../L22/manifest.json")
         cards = manifest.checkpoints(data)
-        # 知识点 deck 现在 = checkpoint 卡 + 动词变位卡（D2：卡即数据，动词变位并入同一 deck）
+        # 知识点 deck = checkpoint 卡 + 动词变位卡 + AI 产出卡（D2/P4：卡即数据，统一一个 deck）
         _conj = _json.load(open("../L22/conjugation.json"))["verbs"]
-        expected_count = len(cards) + len(_conj)
         group_count = sum(c.get("study_group") == "future-tense-system" for c in cards)
 
         at = AppTest.from_file("app.py", default_timeout=10)
@@ -111,16 +110,18 @@ def test_l22_future_tense_group_is_contiguous_in_native_table(tmp_path):
         at.selectbox(key="sel_lesson").set_value("L22").run()
         assert not at.exception
         knowledge_button = next(
-            (b for b in at.button if b.label == f"📝 知识点（{expected_count}）"), None
+            (b for b in at.button if b.label.startswith("📝 知识点（")), None
         )
         assert knowledge_button is not None
 
         knowledge_button.click().run()
         assert not at.exception
-        assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
+        deck = at.session_state.cp_cards
+        assert len(deck) >= len(cards) + len(_conj)          # 含 checkpoint + 变位（+产出）
+        assert f"📝 知识点 1/{len(deck)}" in [s.value for s in at.subheader]
         assert at.dataframe
 
-        table = at.dataframe[0].value
+        table = at.dataframe[0].value                        # 时态组仍连续在最前（变位/产出在其后）
         assert list(table["类别"].iloc[:group_count]) == ["时态变位系统"] * group_count
         assert any("构成 01/22" in title for title in table["知识点"].iloc[:group_count])
         assert any("词根 09/09" in title for title in table["知识点"].iloc[:group_count])
