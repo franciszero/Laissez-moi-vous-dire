@@ -27,7 +27,13 @@ kind ∈ `word:听写/产出/理解/音/变 | checkpoint | conj | production`。
 - **P1 ✅（到期合并）**：banner 当**唯一**到期入口（按选课作用域，词+卡）；撤掉侧栏「到期」「🔁知识点·到期」两个按钮。注：词/卡仍是 banner 里两个按钮（动作真合并 = P3 的共同队列）。
 - **P2（历史统一，需在场）**：一张 attempts 表收所有 kind。**触及 word `attempts`（驱动热力图）**——要迁移、别丢历史、别动 mastery 计算。风险中。
 - **P3（核心引擎合并，需在场）**：`render_practice`+`render_checkpoint` → 一个 `ReviewSession` over `ReviewItem`。**改写每天用的词流程**——最高风险，测试驱动+增量+逐步回滚。先让词流程跑新引擎而行为不变。
-- **P4**：AI(D3) 退化成一种 item kind；模型生命周期在统一 `render(item)` 一处解决（之前推迟的就是它）。
+- **P4 ✅（提前到 P2/P3 之前做，因为只需卡侧 + 用户在场验模型）**：AI 精练退化成 deck 里的 `kind=production` 卡（`_render_production_card`，提交时按需加载模型）；删除独立 `render_llm_practice`/`_render_llm_exercise`/🤖 按钮/`llm_active`/router 分支。闲置卸载提到顶层兜底。**实测**(用户)：提交加载、批改、内存 47→23GB 卸载。**卡侧三类(checkpoint/变位/产出)已统一在一个 deck + 一套 render_checkpoint 分派。**
+
+### 仍剩（词↔卡引擎合并，最深的一层，最大风险）
+卡侧已统一；**词引擎(render_practice/pool/roundlogic/attempts/words.due_at)仍与卡引擎平行**。
+- **P2（历史统一）**：一张 attempts 表收词+卡；触及驱动热力图的 word `attempts` + DB 迁移。
+- **P3（会话/渲染合并）**：`render_practice`+`render_checkpoint` → 一个 `ReviewSession` over `ReviewItem`；**改写每天用的词流程**。
+这两步是真正把"两套引擎"合一的核心，但都重写成熟的词流程 + 动 DB，建议作为**独立专注的一轮**做（测试驱动、增量、逐步回滚），别在长 session 尾部赶。
 
 ## 风险与边界
 - P2/P3 触及成熟的词流程 + 现有 DB（attempts / words.due_at / checkpoints）→ 必须用户在场、写迁移、AppTest 全覆盖、每步可回滚。
