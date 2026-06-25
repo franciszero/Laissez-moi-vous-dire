@@ -255,8 +255,8 @@ def _start_cards(cards: list[dict], label: str, lesson: str) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def render_card_cached(lemma: str):
-    return anki_mod.render_card(lemma)
+def card_state_cached(lemma: str):
+    return anki_mod.card_state(lemma)
 
 
 @st.cache_data(show_spinner=False)
@@ -276,18 +276,21 @@ def render_learn_panel(lemma: str) -> None:
     zh = word_zh(lemma)
     if zh:
         st.markdown(f"**释义**：{zh}")
-    card_html = render_card_cached(lemma)
-    if card_html:
+    state = card_state_cached(lemma)
+    if state["status"] == "ok":
         with st.expander("📇 完整 Anki 卡片", expanded=True):
             components.html(
-                card_html + "<style>.qa-summary{display:none !important}</style>",
+                state["html"] + "<style>.qa-summary{display:none !important}</style>",
                 height=820,
                 scrolling=True,
             )
-    else:
-        definition = macdict_cached(lemma)
-        if definition:
-            st.markdown(f"**词典（macOS）**：{definition}")
+        return
+    # 残卡（生成失败/字段全 N/A）：别显示空卡，但留个提示让我知道这词要重新生成
+    if state["status"] == "stub":
+        st.caption(f"⚠️ Anki 卡{state['reason']}，待重新生成（{lemma}）")
+    definition = macdict_cached(lemma)
+    if definition:
+        st.markdown(f"**词典（macOS）**：{definition}")
 
 
 # =========================
@@ -1957,18 +1960,20 @@ def render_card_view(lemma: str) -> None:
             if st.button("🙈 这个词不用背（隐藏）", key="cardview_hide"):
                 set_word_hidden(wid, True)
                 st.rerun()
-    card_html = render_card_cached(lemma)
-    if card_html:
+    state = card_state_cached(lemma)
+    if state["status"] == "ok":
         components.html(
-            card_html + "<style>.qa-summary{display:none !important}</style>",
+            state["html"] + "<style>.qa-summary{display:none !important}</style>",
             height=820,
             scrolling=True,
         )
     else:
+        if state["status"] == "stub":
+            st.warning(f"⚠️ Anki 卡{state['reason']}，待重新生成。")
         definition = macdict_cached(lemma)
         if definition:
             st.markdown(f"**词典（macOS）**：{definition}")
-        else:
+        elif state["status"] == "missing":
             st.info("这个词还没有 Anki 卡，也没查到法语词典释义。")
 
 

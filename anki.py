@@ -103,6 +103,40 @@ def enrich(lemma: str):
         return None
 
 
+_EXC = (urllib.error.URLError, OSError, RuntimeError, ValueError, IndexError, KeyError)
+# 卡片「有没有真内容」看这几个核心字段——全空/全 N/A 就是生成失败的残卡。
+_CONTENT_FIELDS = ("Core Meaning", "Définition FR", "Grammar Frame", "Example Sentences")
+
+
+def _answer_html(info) -> str | None:
+    """从一张 note info 渲染卡背 HTML（Anki 自带 <style>/.card）；没卡 / 空 -> None。"""
+    cards = info.get("cards") or []
+    if not cards:
+        return None
+    ci = _anki("cardsInfo", cards=[cards[0]])
+    answer = (ci[0].get("answer") if ci else "") or ""
+    if not answer.strip():
+        return None
+    # 网页里放不了的音频记号去掉（图片若有则保持原样）
+    return re.sub(r"\[sound:[^\]]*\]", "", answer)
+
+
+def _stub_reason(info) -> str | None:
+    """笔记存在但生成失败（残卡）：QA Summary 标记解析失败，或核心字段全空/全 N/A。
+    返回给用户看的简短提示；不是残卡 -> None。"""
+    fields = info.get("fields", {})
+
+    def f(name):
+        return html_to_text(fields.get(name, {}).get("value", "")).strip()
+
+    if "解析失败" in f("QA Summary"):
+        return "卡片生成解析失败"
+    vals = [f(n) for n in _CONTENT_FIELDS]
+    if all((not v) or v.upper() == "N/A" for v in vals):
+        return "卡片字段未生成（全为 N/A）"
+    return None
+
+
 def render_card(lemma: str) -> str | None:
     """只读：返回该词 Anki 卡【背面】的完整渲染 HTML（Anki 自己渲染好的，自带 <style> 和 .card 外层）。
     没卡 / Anki 没开 / 异常 -> None。"""
@@ -110,14 +144,26 @@ def render_card(lemma: str) -> str | None:
         info = _find_note(lemma)
         if not info:
             return None
-        cards = info.get("cards") or []
-        if not cards:
-            return None
-        ci = _anki("cardsInfo", cards=[cards[0]])
-        answer = (ci[0].get("answer") if ci else "") or ""
-        if not answer.strip():
-            return None
-        # 网页里放不了的音频记号去掉（图片若有则保持原样）
-        return re.sub(r"\[sound:[^\]]*\]", "", answer)
-    except (urllib.error.URLError, OSError, RuntimeError, ValueError, IndexError, KeyError):
+        return _answer_html(info)
+    except _EXC:
         return None
+
+
+def card_state(lemma: str) -> dict:
+    """只读：返回 {'status': 'ok'|'stub'|'missing', 'html': str|None, 'reason': str|None}。
+    - ok      = 有真内容的卡（html 可渲染）
+    - stub    = 笔记在、但生成失败 / 字段全 N/A（待重新生成；reason 给提示，不显示空卡）
+    - missing = 没笔记 / 没卡 / Anki 没开（沿用「宁缺毋错」，不显示）"""
+    try:
+        info = _find_note(lemma)
+        if not info:
+            return {"status": "missing", "html": None, "reason": None}
+        reason = _stub_reason(info)
+        if reason:
+            return {"status": "stub", "html": None, "reason": reason}
+        html = _answer_html(info)
+        if not html:
+            return {"status": "missing", "html": None, "reason": None}
+        return {"status": "ok", "html": html, "reason": None}
+    except _EXC:
+        return {"status": "missing", "html": None, "reason": None}

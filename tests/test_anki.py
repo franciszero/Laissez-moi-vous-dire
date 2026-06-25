@@ -87,3 +87,57 @@ def test_render_card_strips_sound(monkeypatch):
 def test_render_card_none_when_down(monkeypatch):
     monkeypatch.setattr(anki, "_anki", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
     assert anki.render_card("proche") is None
+
+
+# --- card_state: 区分 有真内容(ok) / 生成失败的残卡(stub) / 没卡(missing) ---
+
+def test_card_state_ok_when_content_present(monkeypatch):
+    def fake(action, **params):
+        if action == "findNotes":
+            return [111]
+        if action == "notesInfo":
+            return [{"noteId": 111, "cards": [222], "fields": {
+                "Lemma": {"value": '<span class="targetword">proche</span>'},
+                "Core Meaning": {"value": "<p>近的</p>"},
+            }}]
+        if action == "cardsInfo":
+            return [{"answer": "<div class='card'>proche adjectif</div>"}]
+        return []
+    monkeypatch.setattr(anki, "_anki", fake)
+    state = anki.card_state("proche")
+    assert state["status"] == "ok"
+    assert "proche adjectif" in state["html"]
+
+
+def test_card_state_stub_when_fields_all_na(monkeypatch):
+    # 真实 bug：笔记存在，但生成解析失败 -> 所有内容字段都是 "N/A"
+    def fake(action, **params):
+        if action == "findNotes":
+            return [111]
+        if action == "notesInfo":
+            return [{"noteId": 111, "cards": [222], "fields": {
+                "Lemma": {"value": '<span class="targetword">une attitude</span>'},
+                "Core Meaning": {"value": "N/A"},
+                "Définition FR": {"value": "N/A"},
+                "Grammar Frame": {"value": "N/A"},
+                "Example Sentences": {"value": "N/A"},
+                "QA Summary": {"value": "结论: 不建议直接学习 模型返回内容解析失败；建议重试该词"},
+            }}]
+        return []
+    monkeypatch.setattr(anki, "_anki", fake)
+    state = anki.card_state("une attitude")
+    assert state["status"] == "stub"
+    assert state["html"] is None
+    assert state["reason"]  # 非空，给用户「待重新生成」的提示
+
+
+def test_card_state_missing_when_no_note(monkeypatch):
+    monkeypatch.setattr(anki, "_anki", lambda *a, **k: [])
+    state = anki.card_state("au cœur de")
+    assert state["status"] == "missing"
+    assert state["html"] is None
+
+
+def test_card_state_missing_when_anki_down(monkeypatch):
+    monkeypatch.setattr(anki, "_anki", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
+    assert anki.card_state("proche")["status"] == "missing"
