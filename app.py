@@ -162,13 +162,25 @@ WORDS_FILE = "words.txt"
 BASE_DIR = Path(__file__).resolve().parent.parent  # 本地录屏课/
 
 
+def _file_signature(pattern: str) -> tuple[tuple[str, int, int], ...]:
+    """Return a cache key for lesson data files matched under BASE_DIR."""
+    rows: list[tuple[str, int, int]] = []
+    for path in sorted(BASE_DIR.glob(pattern)):
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        rows.append((str(path.relative_to(BASE_DIR)), stat.st_mtime_ns, stat.st_size))
+    return tuple(rows)
+
+
 @st.cache_data(show_spinner=False)
-def load_vocab():
+def load_vocab(_signature: tuple[tuple[str, int, int], ...]):
     return vocab_mod.load_all_vocab(BASE_DIR)
 
 
 @st.cache_data(show_spinner=False)
-def load_checkpoints():
+def load_checkpoints(_signature: tuple[tuple[str, int, int], ...]):
     """扫 ../L*/manifest.json，取 bucket==checkpoint 的卡 → {lesson: [card,...]}。"""
     import manifest as mf
     out: dict = {}
@@ -184,7 +196,7 @@ def load_checkpoints():
 
 
 @st.cache_data(show_spinner=False)
-def load_conjugations():
+def load_conjugations(_signature: tuple[tuple[str, int, int], ...]):
     """扫 ../L*/conjugation.json → {lesson: [{verb,type,zh}, ...]}（只规则动词）。"""
     out: dict = {}
     for cj in sorted(BASE_DIR.glob("L*/conjugation.json")):
@@ -218,8 +230,8 @@ def _conj_card(spec: dict, lesson: str) -> dict:
 
 def _lesson_cards(lesson: str) -> list[dict]:
     """一课的全部知识卡：checkpoint 卡 + 动词变位卡（卡即数据，统一一个 deck）。"""
-    cards = list(load_checkpoints().get(lesson, []))
-    for _s in load_conjugations().get(lesson, []):
+    cards = list(load_checkpoints(_file_signature("L*/manifest.json")).get(lesson, []))
+    for _s in load_conjugations(_file_signature("L*/conjugation.json")).get(lesson, []):
         try:
             cards.append(_conj_card(_s, lesson))
         except KeyError:
@@ -973,7 +985,7 @@ st.set_page_config(
 
 init_db()
 
-VOCAB, LESSONS = load_vocab()
+VOCAB, LESSONS = load_vocab(_file_signature("*/vocab.json"))
 if "vocab_imported" not in st.session_state:
     import_vocab_into_db(VOCAB)
     st.session_state.vocab_imported = True
