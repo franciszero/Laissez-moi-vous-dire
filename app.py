@@ -985,10 +985,11 @@ st.set_page_config(
 
 init_db()
 
-VOCAB, LESSONS = load_vocab(_file_signature("*/vocab.json"))
-if "vocab_imported" not in st.session_state:
+VOCAB_SIGNATURE = _file_signature("*/vocab.json")
+VOCAB, LESSONS = load_vocab(VOCAB_SIGNATURE)
+if st.session_state.get("vocab_import_signature") != VOCAB_SIGNATURE:
     import_vocab_into_db(VOCAB)
-    st.session_state.vocab_imported = True
+    st.session_state.vocab_import_signature = VOCAB_SIGNATURE
 
 if "pool" not in st.session_state:
     st.session_state.pool = []

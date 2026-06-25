@@ -143,6 +143,7 @@ def test_l23_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
 
     try:
         expected_count = len(manifest.checkpoints(manifest.load("../L23/manifest.json")))
+        expected_vocab = len(manifest.vocab_items(manifest.load("../L23/manifest.json")))
 
         at = AppTest.from_file("app.py", default_timeout=10)
         at.run()
@@ -150,6 +151,7 @@ def test_l23_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
 
         at.selectbox(key="sel_lesson").set_value("L23").run()
         assert not at.exception
+        assert any(b.label == f"开始这一课（{expected_vocab} 词）" for b in at.button)
 
         knowledge_button = next(
             (b for b in at.button if b.label == f"📝 知识点（{expected_count}）"),
