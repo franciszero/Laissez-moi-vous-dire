@@ -21,6 +21,7 @@ import mastery as mastery_mod
 import srs
 import asr
 import llm
+import llm_lifecycle
 import aigrade
 import conjugate
 from store import (
@@ -42,7 +43,6 @@ from store import (
 )
 
 ZH_VOICE = "Tingting"  # macOS 中文嗓音（听/看中文模式用）
-LLM_IDLE_SECONDS = 5 * 60
 MODES = {
     "听法语 → 敲法语": ("fr_audio", ("fr",), "transcribe"),   # 听写：音→拼写
     "听法语 → 敲中文": ("fr_audio", ("zh",), "meaning"),       # 理解：法→意
@@ -2087,13 +2087,14 @@ def _llm_idle_watch() -> None:
     # 引擎级兜底：只要模型加载着就盯（不论在哪个视图），闲置即卸载，最大泄漏=闲置阈值
     if not st.session_state.get("llm_loaded"):
         return
-    idle = time.time() - st.session_state.get("llm_last_active", 0)
-    if idle >= LLM_IDLE_SECONDS:
+    now = time.time()
+    last_active = st.session_state.get("llm_last_active", 0)
+    if llm_lifecycle.should_idle_unload(True, last_active, now):
         llm.unload()
         st.session_state.llm_loaded = False
         st.session_state.llm_error = "闲置超过 5 分钟，模型已自动卸载并释放内存。"
         st.rerun(scope="app")
-    st.caption(f"模型会在闲置 {max(0, int((LLM_IDLE_SECONDS - idle) / 60) + 1)} 分钟后自动卸载。")
+    st.caption(f"模型会在闲置 {llm_lifecycle.idle_minutes_left(last_active, now)} 分钟后自动卸载。")
 
 
 def _render_hints(spec: dict) -> str:
