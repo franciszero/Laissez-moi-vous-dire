@@ -43,7 +43,7 @@
 - **R0 窄安全网（按 R3 实际爆炸半径裁，非按推迟的 R1/R2 裁）**：R3 只动 LLM 生命周期，故 R0 只需把 load-on-submit / idle-unload / leave-unload / **绝不写 config** 这四条行为用测试钉死（`test_llm*.py` 已有部分，补全缺口）。**「词 + 卡全流程特征测试」是一般卫生、随 R1 一起推迟，不作 R3 的 gating**——否则就和本文档自己的 YAGNI 论证相左。（当前基线 101 绿。）
 - **R3 生命周期收口**：把 LLM load/unload 的 *policy*（提交首次加载 + 闲置卸载 + 离开卸载 + **绝不写 `~/.hermes/config.yaml`** 不变量）收进**一个小独立模块**（与 `llm.py` 这个 *mechanism* adapter 分开）。**不**顺手立 `review/` 包。
   - 验收必须含：在真实会话确认 P4 AI 卡仍"提交首次加载 / 闲置卸载"（内存 47→23GB）——此项**不可纯代码验**，需在场跑。
-- **扩展 `llm-graded-practice` skill**（不新建）：写入"确定性信任边界"不变量。
+- **扩展 `llm-graded-practice` skill**（不新建）：~~写入"确定性信任边界"不变量~~ —— **更正（2026-06-25）：该不变量已在 skill 第 1/2/7/8 点，无需重写**；Task 4 缩为只补"生命周期独立模块"这一新学习。详见 [`2026-06-25-llm-lifecycle-r0-r3-plan.md`](2026-06-25-llm-lifecycle-r0-r3-plan.md)。
 
 **不做（推迟）：**
 
