@@ -1,4 +1,5 @@
 import shutil
+import time
 from pathlib import Path
 
 import llm
@@ -81,6 +82,31 @@ def test_production_ai_requires_user_verdict_before_srs(tmp_path, monkeypatch):
         next(b for b in at.button if b.key == "prod_right").click().run()
         after = store.get_checkpoint_state([card["id"]])[card["id"]]["correct_streak"]
         assert after == before + 1
+    finally:
+        if bak.exists():
+            shutil.copy2(bak, db)
+        elif db.exists():
+            db.unlink()
+
+
+def test_leave_overlays_unloads_when_model_loaded(tmp_path, monkeypatch):
+    """离开覆盖视图（点「开始这一课」回词练习）时，已加载的模型被卸载。"""
+    db = Path("dictation.db"); bak = tmp_path / "db.bak"
+    if db.exists():
+        shutil.copy2(db, bak)
+    unloaded = []
+    monkeypatch.setattr(llm, "unload", lambda: unloaded.append(True))
+    try:
+        at = AppTest.from_file("app.py", default_timeout=10).run()
+        at.session_state.llm_loaded = True
+        at.session_state.llm_last_active = time.time()   # 刚活动过 → 闲置兜底先不卸，隔离 leave 路径
+        at.run()
+        assert not at.exception
+        assert unloaded == []                            # 还没离开，未卸载
+        next(b for b in at.button if b.label.startswith("开始这一课")).click().run()
+        assert not at.exception
+        assert unloaded == [True]                        # 离开覆盖视图 → 卸载一次
+        assert at.session_state.llm_loaded is False
     finally:
         if bak.exists():
             shutil.copy2(bak, db)

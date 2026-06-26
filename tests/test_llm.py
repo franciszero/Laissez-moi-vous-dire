@@ -58,3 +58,26 @@ def test_load_failure_is_clear_and_stops_process(tmp_path, monkeypatch):
     monkeypatch.setattr(llm.subprocess, "Popen", lambda *_a, **_k: DeadProcess())
     with pytest.raises(llm.LLMError, match="加载失败"):
         llm.load(timeout=0.01)
+
+
+def test_unload_never_writes_hermes_config(tmp_path, monkeypatch):
+    """生命周期不变量：卸载只停进程，绝不改 Hermes 配置（曾被 benchmark 覆盖过）。"""
+    config = tmp_path / "config.yaml"
+    config.write_text("model:\n  default: keep-me\n", encoding="utf-8")
+    before = config.read_text(encoding="utf-8")
+    monkeypatch.setattr(llm, "CONFIG", config)
+
+    # 无进程分支：unload 空转，配置不变
+    llm._process = None
+    llm.unload()
+    assert config.read_text(encoding="utf-8") == before
+
+    # 有进程分支：走真实 terminate/wait 卸载路径，仍绝不碰配置
+    class _FakeProc:
+        def poll(self): return None          # 活着 → 进入 terminate 分支
+        def terminate(self): self.killed = True
+        def wait(self, timeout=None): return 0
+    llm._process = _FakeProc()
+    llm.unload()
+    assert config.read_text(encoding="utf-8") == before
+    assert llm._process is None              # 卸载后进程句柄清空
