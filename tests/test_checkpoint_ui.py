@@ -214,3 +214,44 @@ def test_l24_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
             shutil.copy2(backup_path, db_path)
         elif db_path.exists():
             db_path.unlink()
+
+
+def test_l25_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
+    """新课写入 vocab/manifest 后，应能在侧栏选课并进入知识点 deck。"""
+    db_path = Path("dictation.db")
+    backup_path = tmp_path / "dictation.db.bak"
+    if db_path.exists():
+        shutil.copy2(db_path, backup_path)
+
+    try:
+        expected_count = len(manifest.checkpoints(manifest.load("../L25/manifest.json")))
+
+        at = AppTest.from_file("app.py", default_timeout=10)
+        at.run()
+        assert not at.exception
+
+        at.selectbox(key="sel_lesson").set_value("L25").run()
+        assert not at.exception
+        # 行为：L25 可选课且有可练词。N 来自实时 dictation.db（已排除「🙈 不用背」隐藏词），
+        # 与 manifest 静态词数本就可不同，故不硬比计数——只断言按钮存在且 N>0。
+        start = next((b for b in at.button if b.label.startswith("开始这一课（")), None)
+        assert start is not None
+        n = int(start.label.split("（")[1].split(" 词")[0])
+        assert n > 0
+
+        knowledge_button = next(
+            (b for b in at.button if b.label == f"📝 知识点（{expected_count}）"),
+            None,
+        )
+        assert knowledge_button is not None
+
+        knowledge_button.click().run()
+        assert not at.exception
+        assert at.session_state.cp_label == "知识点 · L25"
+        assert len(at.session_state.cp_cards) == expected_count
+        assert f"📝 知识点 1/{expected_count}" in [s.value for s in at.subheader]
+    finally:
+        if backup_path.exists():
+            shutil.copy2(backup_path, db_path)
+        elif db_path.exists():
+            db_path.unlink()
