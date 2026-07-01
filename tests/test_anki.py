@@ -141,3 +141,12 @@ def test_card_state_missing_when_no_note(monkeypatch):
 def test_card_state_missing_when_anki_down(monkeypatch):
     monkeypatch.setattr(anki, "_anki", lambda *a, **k: (_ for _ in ()).throw(OSError("down")))
     assert anki.card_state("proche")["status"] == "missing"
+
+
+def test_core_meaning_text_filters_empty_and_na():
+    assert anki.core_meaning_text({"core_meaning": "一种用面粉烘焙成的主食"}) == "一种用面粉烘焙成的主食"
+    assert anki.core_meaning_text(None) is None
+    assert anki.core_meaning_text({}) is None
+    assert anki.core_meaning_text({"core_meaning": ""}) is None
+    assert anki.core_meaning_text({"core_meaning": "N/A"}) is None
+    assert anki.core_meaning_text({"core_meaning": "n/a"}) is None

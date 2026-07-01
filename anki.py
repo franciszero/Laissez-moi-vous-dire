@@ -103,6 +103,12 @@ def enrich(lemma: str):
         return None
 
 
+def core_meaning_text(enrich_result) -> str | None:
+    """从 enrich() 结果取可显示的 core_meaning；None / 空 / "N/A" → None。"""
+    cm = (enrich_result or {}).get("core_meaning", "")
+    return cm if cm and cm.upper() != "N/A" else None
+
+
 _EXC = (urllib.error.URLError, OSError, RuntimeError, ValueError, IndexError, KeyError)
 # 卡片「有没有真内容」看这几个核心字段——全空/全 N/A 就是生成失败的残卡。
 _CONTENT_FIELDS = ("Core Meaning", "Définition FR", "Grammar Frame", "Example Sentences")

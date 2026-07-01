@@ -260,6 +260,11 @@ def card_state_cached(lemma: str):
 
 
 @st.cache_data(show_spinner=False)
+def enrich_cached(lemma: str):
+    return anki_mod.enrich(lemma)
+
+
+@st.cache_data(show_spinner=False)
 def macdict_cached(lemma: str):
     return macdict_mod.define(lemma)
 
@@ -278,6 +283,9 @@ def render_learn_panel(lemma: str) -> None:
         st.markdown(f"**释义**：{zh}")
     state = card_state_cached(lemma)
     if state["status"] == "ok":
+        cm = anki_mod.core_meaning_text(enrich_cached(lemma))
+        if cm:
+            st.caption(f"🧠 核心义：{cm}")
         with st.expander("📇 完整 Anki 卡片", expanded=True):
             components.html(
                 state["html"] + "<style>.qa-summary{display:none !important}</style>",
