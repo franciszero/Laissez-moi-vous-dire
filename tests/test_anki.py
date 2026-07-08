@@ -143,6 +143,44 @@ def test_card_state_missing_when_anki_down(monkeypatch):
     assert anki.card_state("proche")["status"] == "missing"
 
 
+# --- memoized_state: cache ONLY stable 'ok'; re-check missing/stub so a
+#     newly generated Anki card appears without an app restart ---
+
+def test_memoized_state_does_not_cache_missing(monkeypatch):
+    seq = iter([
+        {"status": "missing", "html": None, "reason": None},   # card not generated yet
+        {"status": "ok", "html": "<div>card</div>", "reason": None},  # generated later
+    ])
+    monkeypatch.setattr(anki, "card_state", lambda lm: next(seq))
+    cache = {}
+    assert anki.memoized_state(cache, "x")["status"] == "missing"
+    assert anki.memoized_state(cache, "x")["status"] == "ok"   # re-fetched, now visible
+
+
+def test_memoized_state_does_not_cache_stub(monkeypatch):
+    calls = []
+    def stub(lm):
+        calls.append(lm)
+        return {"status": "stub", "html": None, "reason": "x"}
+    monkeypatch.setattr(anki, "card_state", stub)
+    cache = {}
+    anki.memoized_state(cache, "x")
+    anki.memoized_state(cache, "x")
+    assert calls == ["x", "x"]   # stub re-checked every time (regeneration should show)
+
+
+def test_memoized_state_caches_ok(monkeypatch):
+    calls = []
+    def stub(lm):
+        calls.append(lm)
+        return {"status": "ok", "html": "<div>card</div>", "reason": None}
+    monkeypatch.setattr(anki, "card_state", stub)
+    cache = {}
+    anki.memoized_state(cache, "x")
+    anki.memoized_state(cache, "x")
+    assert calls == ["x"]   # ok is stable -> fetched once, then served from cache
+
+
 def test_core_meaning_text_filters_empty_and_na():
     assert anki.core_meaning_text({"core_meaning": "一种用面粉烘焙成的主食"}) == "一种用面粉烘焙成的主食"
     assert anki.core_meaning_text(None) is None

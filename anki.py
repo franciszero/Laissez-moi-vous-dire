@@ -173,3 +173,16 @@ def card_state(lemma: str) -> dict:
         return {"status": "ok", "html": html, "reason": None}
     except _EXC:
         return {"status": "missing", "html": None, "reason": None}
+
+
+def memoized_state(cache: dict, lemma: str) -> dict:
+    """card_state 的记忆化：只缓存稳定的 'ok'；'missing'/'stub' 每次都重查。
+    这样在 app 运行期间新生成的 Anki 卡能马上出现，不必重启（负结果不会被永久缓存）。
+    `cache` 由调用方持有（如 st.session_state 里的 dict）。"""
+    hit = cache.get(lemma)
+    if hit is not None:
+        return hit
+    state = card_state(lemma)
+    if state.get("status") == "ok":
+        cache[lemma] = state
+    return state

@@ -254,9 +254,11 @@ def _start_cards(cards: list[dict], label: str, lesson: str) -> None:
     st.session_state.pop("cp_feedback", None)
 
 
-@st.cache_data(show_spinner=False)
 def card_state_cached(lemma: str):
-    return anki_mod.card_state(lemma)
+    # 只记忆稳定的 'ok'；'missing'/'stub' 每次重查，这样运行期间新生成的 Anki 卡会
+    # 马上出现（旧实现用 @st.cache_data 把「没卡」永久缓存了，卡生成后网站也看不到）。
+    cache = st.session_state.setdefault("_anki_ok_cache", {})
+    return anki_mod.memoized_state(cache, lemma)
 
 
 @st.cache_data(show_spinner=False)
@@ -1161,6 +1163,7 @@ with st.sidebar:
         load_vocab.clear()
         load_checkpoints.clear()
         load_conjugations.clear()
+        st.session_state.pop("_anki_ok_cache", None)  # 重生成过的 Anki 卡也强制刷新
         st.rerun()
 
     hidden_rows = get_hidden_words()
