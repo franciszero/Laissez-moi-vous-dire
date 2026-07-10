@@ -56,6 +56,20 @@ python3 scripts/merge_vocab.py --vocab ../L20/vocab.json --input batch.json
 
 工具按规范化后的 lemma 去重：目标课已有词条保持原样，只追加缺词；同一批次的冲突释义会直接报错。重复运行结果不变。`--input -` 可从标准输入读取。
 
+若词条来自 anki-wordsmith 批次，先从 8080 的现有批次产物生成有来源的
+merge 输入：
+
+```bash
+python3 scripts/project_anki_batch_vocab.py \
+  --batch-id batch_xxx \
+  --out /tmp/L28.anki-vocab.json
+```
+
+该工具只用 Anki 卡的 `Core Meaning` 生成 `zh`，原提交例句进入
+`example`；搭配、辨析和例句翻译不会被提升成裸词义。输出可直接交给
+`merge_vocab.py`，也可人工把 `zh` 缩短后再合并，但缩写仍只能依据
+`Core Meaning`。
+
 ---
 
 ## 答完显示的词义来自哪（三档，自动降级）
