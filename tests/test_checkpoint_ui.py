@@ -437,9 +437,13 @@ def test_l30_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
             by_lemma[lemma]["zh_by_lesson"]["L30"]
             for lemma in by_lesson["L30"]
         ]
-        source_tag = re.compile(r"^\[(?:T4Q\d+(?:/Q\d+)*|L30课前复习)\] ")
+        source_tag = re.compile(r"^\[(?:T4Q\d+(?:/Q\d+)*(?: 补)?|L30课前复习)\] ")
+        codex_supplement = re.compile(r"^\[T4Q\d+(?:/Q\d+)* 补\].* \[Codex 建议：.+\]$")
         assert l30_meanings
         assert all(source_tag.match(meaning) for meaning in l30_meanings)
+        supplement_meanings = [meaning for meaning in l30_meanings if " 补]" in meaning]
+        assert supplement_meanings
+        assert all(codex_supplement.match(meaning) for meaning in supplement_meanings)
 
         at = AppTest.from_file("app.py", default_timeout=10)
         at.run()
