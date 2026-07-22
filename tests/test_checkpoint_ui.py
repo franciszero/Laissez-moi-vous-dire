@@ -1,7 +1,9 @@
 from pathlib import Path
+import re
 import shutil
 
 import manifest
+import vocab
 from streamlit.testing.v1 import AppTest
 
 
@@ -430,6 +432,14 @@ def test_l30_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
 
     try:
         expected_count = len(manifest.checkpoints(manifest.load("../L30/manifest.json")))
+        by_lemma, by_lesson = vocab.load_all_vocab("..")
+        l30_meanings = [
+            by_lemma[lemma]["zh_by_lesson"]["L30"]
+            for lemma in by_lesson["L30"]
+        ]
+        source_tag = re.compile(r"^\[(?:T4Q\d+(?:/Q\d+)*|L30课前复习)\] ")
+        assert l30_meanings
+        assert all(source_tag.match(meaning) for meaning in l30_meanings)
 
         at = AppTest.from_file("app.py", default_timeout=10)
         at.run()
