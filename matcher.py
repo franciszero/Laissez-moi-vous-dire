@@ -29,6 +29,10 @@ def check_fr(answer: str, target: str) -> bool:
 # 占位符 / 省略号（"……" 要在 "…" 前面，先吃成对的）
 _PLACEHOLDERS = ["……", "…", "...", "。。。", "某人", "某事", "某物", "某地", "某", "XX", "xx", "××", "_"]
 _SEP = re.compile(r"[，,、;；/／]")
+_SOURCE_PREFIX = re.compile(
+    r"^\s*\[(?:T\d+Q\d+(?:/Q\d+)*(?:\s*[;；]\s*T\d+Q\d+(?:/Q\d+)*)*|L\d+课前复习)(?:\s*补)?\]\s*"
+)
+_CODEX_NOTE_SUFFIX = re.compile(r"\s*\[Codex\s*建议\s*[:：][^\]]*\]\s*$", re.IGNORECASE)
 
 
 def _norm_zh(t: str) -> str:
@@ -46,16 +50,23 @@ def _skeleton(t: str) -> str:
     return s
 
 
+def _core_zh_gloss(gloss: str) -> str:
+    """去掉学习来源和选词理由；这些内容保留显示，但不参与中文判分。"""
+    core = _SOURCE_PREFIX.sub("", gloss or "")
+    return _CODEX_NOTE_SUFFIX.sub("", core).strip()
+
+
 def check_zh(answer: str, gloss: str):
     """返回 True=算对；None=拿不准（交人工自判）。永不自动判错。"""
     a = _norm_zh(answer)
     if not a:
         return None
-    senses = _senses(gloss)
+    core_gloss = _core_zh_gloss(gloss)
+    senses = _senses(core_gloss)
     if a in senses:
         return True
     a_sk = _skeleton(answer)
-    if a_sk and (a_sk == _skeleton(gloss) or a_sk in {_skeleton(s) for s in senses}):
+    if a_sk and (a_sk == _skeleton(core_gloss) or a_sk in {_skeleton(s) for s in senses}):
         return True
     return None
 

@@ -43,6 +43,18 @@ def test_check_zh_placeholder_skeleton():
     assert check_zh("在某之前", "在...之前") is True
 
 
+def test_check_zh_ignores_visible_learning_metadata():
+    assert check_zh("调查", "[T4Q12] 调查；民意调查") is True
+    assert check_zh("民意调查", "[T4Q12] 调查；民意调查") is True
+    assert check_zh("预留的", "[T4Q6/Q11] 预留的；专供的") is True
+    assert check_zh("体验", "[T4Q5; T5Q2] 体验") is True
+    assert check_zh("相反", "[L30课前复习] 相反；反而") is True
+    assert check_zh(
+        "调查",
+        "[T4Q12 补] 调查；民意调查 [Codex 建议：TCF 常考同义替换]",
+    ) is True
+
+
 def test_check_zh_uncertain_returns_none():
     assert check_zh("增加", "增长，提高") is None       # 近义但不同 -> 自判
     assert check_zh("火", "水") is None
