@@ -369,7 +369,6 @@ def render_learn_panel(lemma: str) -> None:
     zh = word_zh(lemma)
     if zh:
         st.markdown(f"**释义**：{zh}")
-    render_vocab_provenance(lemma)
     state = card_state_cached(lemma)
     if state["status"] == "ok":
         cm = anki_mod.core_meaning_text(enrich_cached(lemma))
@@ -1545,6 +1544,7 @@ def render_practice() -> None:
             f"{st.session_state.round_label} · {mode_name} · "
             f"每 {st.session_state.batch_size_round} 个歇一下 · 还剩 {total - current_no} 词"
         )
+        render_vocab_provenance(current_word["text"])
 
         zh_gloss = word_zh(current_word["text"])
 
@@ -2045,6 +2045,7 @@ def render_card_view(lemma: str) -> None:
     """主窗口里开卷看某个词的完整 Anki 卡。"""
     zh = word_zh(lemma)
     st.subheader(f"📖 {lemma}" + (f" — {zh}" if zh else ""))
+    render_vocab_provenance(lemma)
     # 软删除：点词进来这里就能隐藏/恢复（不用进听写流程）
     _ids = get_ids_for_lemmas([lemma])
     if _ids:

@@ -5,7 +5,7 @@ import store
 from streamlit.testing.v1 import AppTest
 
 
-def test_l31_provenance_is_hidden_until_answer_then_reconnects_to_source(tmp_path):
+def test_l31_provenance_is_available_before_answer_without_revealing_answer_panel(tmp_path):
     db_path = Path("dictation.db")
     backup_path = tmp_path / "dictation.db.bak"
     if db_path.exists():
@@ -30,11 +30,6 @@ def test_l31_provenance_is_hidden_until_answer_then_reconnects_to_source(tmp_pat
         at.run()
 
         assert not at.exception
-        assert "📚 为什么收录这个词" not in [item.label for item in at.expander]
-
-        next(button for button in at.button if button.label == "显示答案").click().run()
-
-        assert not at.exception
         assert "📚 为什么收录这个词" in [item.label for item in at.expander]
         rendered = "\n".join(item.value for item in at.markdown)
         assert "L31 · 阅读 Test 5 · 第 15 题 · 选项 D" in rendered
@@ -43,6 +38,13 @@ def test_l31_provenance_is_hidden_until_answer_then_reconnects_to_source(tmp_pat
         assert "1157-1231" in rendered
         captions = "\n".join(item.value for item in at.caption)
         assert "不属于选项的完整表层词形" in captions
+        assert not any(item.value.startswith("答案：") for item in at.info)
+
+        next(button for button in at.button if button.label == "显示答案").click().run()
+
+        assert not at.exception
+        assert [item.label for item in at.expander].count("📚 为什么收录这个词") == 1
+        assert any(item.value.startswith("答案：") for item in at.info)
     finally:
         if backup_path.exists():
             shutil.copy2(backup_path, db_path)

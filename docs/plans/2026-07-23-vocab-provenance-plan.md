@@ -48,7 +48,7 @@ different classroom occurrences append.
 
 - [x] Validate, preserve, and append provenance in `merge_vocab.py`.
 - [x] Aggregate provenance per lesson in `vocab.load_all_vocab()`.
-- [x] Render a native Streamlit expander after the answer is visible.
+- [x] Render a native Streamlit expander alongside the active word prompt.
 - [x] Add behavior-focused merge, loader, and learner-surface tests.
 - [x] Update lifecycle, launch, and screenshot-ingest skills to require the
       contract for newly selected vocabulary.
@@ -65,15 +65,16 @@ different classroom occurrences append.
 - Do not require provenance retroactively for unrelated legacy lessons.
 - Keep `[T…Q…]` prefixes readable for backward compatibility, but treat the
   structured array as the canonical provenance.
-- Use Streamlit's existing `st.expander` affordance and keep provenance hidden
-  until an answer/learning panel is shown.
+- Use Streamlit's existing `st.expander` affordance. Provenance remains
+  available with the active prompt; the answer and learning panel keep their
+  independent reveal behavior.
 
 ## Verification
 
 - Regression tests prove existing row preservation, provenance append, duplicate
   suppression, and invalid-input rejection.
 - Loader tests prove the same lemma can retain different provenance by lesson.
-- App test proves the explanation is not leaked before answer reveal and is
-  visible afterward.
+- App test proves the explanation is available before answer reveal while the
+  answer panel remains hidden.
 - Course-data checks compare pre/post L31 lemma count and word-store IDs.
 - Full `pytest`, Streamlit boot, and HTTP health checks complete the release.
