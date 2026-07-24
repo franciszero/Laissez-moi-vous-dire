@@ -17,6 +17,15 @@ _GRAM_ABBR = sorted(
 
 _POS_BY_CATEGORY = {"NOMS": "noun", "VERBES": "verb", "ADJECTIFS": "adj"}
 
+_PROVENANCE_REQUIRED_TEXT = (
+    "source_kind",
+    "source_ref",
+    "teacher_action",
+    "selection_reason",
+)
+_PROVENANCE_OPTIONAL_TEXT = ("learning_note",)
+_EVIDENCE_OPTIONAL_TEXT = ("time", "lines")
+
 
 # 阴性后缀替换规则：(masc 结尾, marker, 去掉几个字符, 加什么)
 _FEM_SUFFIX_RULES = [
@@ -79,6 +88,63 @@ def feminine_form(masc, marker):
     if len(m) >= 4:
         return m   # 完整阴性词（occidentale/belle/vieille…）
     return None
+
+
+def normalize_provenance_item(item: dict, *, context: str = "provenance") -> dict:
+    """Validate and normalize one learner-facing vocabulary provenance record."""
+    if not isinstance(item, dict):
+        raise ValueError(f"{context} must be an object")
+
+    normalized: dict = {}
+    for field in _PROVENANCE_REQUIRED_TEXT:
+        value = item.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"{context} requires non-empty {field}")
+        normalized[field] = value.strip()
+
+    evidence = item.get("evidence")
+    if not isinstance(evidence, dict):
+        raise ValueError(f"{context} requires evidence object")
+    evidence_file = evidence.get("file")
+    if not isinstance(evidence_file, str) or not evidence_file.strip():
+        raise ValueError(f"{context} requires non-empty evidence.file")
+    normalized_evidence = {"file": evidence_file.strip()}
+    for field in _EVIDENCE_OPTIONAL_TEXT:
+        value = evidence.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"{context} evidence.{field} must be a string")
+        if value.strip():
+            normalized_evidence[field] = value.strip()
+    normalized["evidence"] = normalized_evidence
+
+    for field in _PROVENANCE_OPTIONAL_TEXT:
+        value = item.get(field)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f"{context} {field} must be a string")
+        if value.strip():
+            normalized[field] = value.strip()
+    return normalized
+
+
+def normalize_provenance_list(value, *, context: str = "provenance") -> list[dict]:
+    """Validate and de-duplicate a provenance array without changing its order."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{context} must be an array")
+    normalized: list[dict] = []
+    seen: set[str] = set()
+    for index, item in enumerate(value, 1):
+        record = normalize_provenance_item(item, context=f"{context}[{index}]")
+        key = json.dumps(record, ensure_ascii=False, sort_keys=True)
+        if key not in seen:
+            normalized.append(record)
+            seen.add(key)
+    return normalized
 
 
 def derive_pos(category: str, raw: str) -> str:
@@ -194,7 +260,8 @@ def load_all_vocab(base_dir):
             slot = by_lemma.setdefault(
                 lemma, {"pos": e.get("pos", ""), "zh": e.get("zh", ""),
                         "example": e.get("example"), "fem": e.get("fem"),
-                        "zh_by_lesson": {}, "lessons": []}
+                        "zh_by_lesson": {}, "provenance_by_lesson": {},
+                        "lessons": []}
             )
             if lesson not in slot["lessons"]:
                 slot["lessons"].append(lesson)
@@ -204,4 +271,22 @@ def load_all_vocab(base_dir):
                 slot["zh"] = e["zh"]
             if not slot.get("fem") and e.get("fem"):
                 slot["fem"] = e["fem"]
+            try:
+                provenance = normalize_provenance_list(
+                    e.get("provenance"),
+                    context=f"{vj}: {lemma} provenance",
+                )
+            except ValueError:
+                provenance = []
+            if provenance:
+                existing = slot["provenance_by_lesson"].setdefault(lesson, [])
+                existing_keys = {
+                    json.dumps(item, ensure_ascii=False, sort_keys=True)
+                    for item in existing
+                }
+                for item in provenance:
+                    key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+                    if key not in existing_keys:
+                        existing.append(item)
+                        existing_keys.add(key)
     return by_lemma, by_lesson

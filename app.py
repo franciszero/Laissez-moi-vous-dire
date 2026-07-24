@@ -278,11 +278,98 @@ def word_zh(lemma: str) -> str:
     return (entry.get("zh_by_lesson") or {}).get(lesson) or entry.get("zh", "")
 
 
+_PROVENANCE_ACTION_LABELS = {
+    "memorize": "老师明确要求掌握",
+    "explain": "解释题目或原文",
+    "correction": "纠错",
+    "contrast": "对比辨析",
+    "synonym": "近义表达",
+    "word_family": "同词族扩展",
+    "review": "复习回顾",
+    "user_supplied": "课后材料补充",
+}
+
+
+def _provenance_source_label(source_ref: str) -> str:
+    opening = re.fullmatch(
+        r"(L\d+):opening-review:(L\d+):T(\d+)Q(.+)",
+        source_ref,
+        flags=re.IGNORECASE,
+    )
+    if opening:
+        lesson, source_lesson, test_no, question_no = opening.groups()
+        return (
+            f"{lesson} · 开场复习 · 回看 {source_lesson} "
+            f"阅读 Test {test_no} · 第 {question_no} 题"
+        )
+    match = re.fullmatch(
+        r"(L\d+):T(\d+)Q(\d+)(?::option-([A-D]))?",
+        source_ref,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        lesson, test_no, question_no, option = match.groups()
+        label = f"{lesson} · 阅读 Test {test_no} · 第 {question_no} 题"
+        if option:
+            label += f" · 选项 {option.upper()}"
+        return label
+    if source_ref.endswith(":opening-review"):
+        return f"{source_ref.split(':', 1)[0]} · 开场复习"
+    if source_ref.endswith(":transcript"):
+        return f"{source_ref.split(':', 1)[0]} · 课堂转录"
+    return source_ref
+
+
+def word_provenance(lemma: str) -> list[tuple[str, dict]]:
+    """Return provenance for the active lesson, retaining lesson labels for 全部."""
+    entry = VOCAB.get(lemma) or {}
+    by_lesson = entry.get("provenance_by_lesson") or {}
+    lesson = st.session_state.get("round_lesson")
+    if lesson and lesson != "全部":
+        return [(lesson, item) for item in by_lesson.get(lesson, [])]
+    return [
+        (source_lesson, item)
+        for source_lesson in entry.get("lessons", [])
+        for item in by_lesson.get(source_lesson, [])
+    ]
+
+
+def render_vocab_provenance(lemma: str) -> None:
+    records = word_provenance(lemma)
+    if not records:
+        return
+    with st.expander("📚 为什么收录这个词"):
+        for index, (lesson, item) in enumerate(records):
+            if index:
+                st.divider()
+            source = _provenance_source_label(item["source_ref"])
+            if st.session_state.get("round_lesson") == "全部" and not source.startswith(lesson):
+                source = f"{lesson} · {source}"
+            st.markdown(f"**来源**：{source}")
+            st.markdown(f"**入库理由**：{item['selection_reason']}")
+            action = _PROVENANCE_ACTION_LABELS.get(
+                item["teacher_action"],
+                item["teacher_action"],
+            )
+            st.markdown(f"**教学关系**：{action}")
+            evidence = item["evidence"]
+            position = " · ".join(
+                value for value in (evidence.get("time"), evidence.get("lines")) if value
+            )
+            evidence_text = f"`{evidence['file']}`"
+            if position:
+                evidence_text = f"{position} · {evidence_text}"
+            st.markdown(f"**课堂证据**：{evidence_text}")
+            if item.get("learning_note"):
+                st.caption(f"学习提示：{item['learning_note']}")
+
+
 def render_learn_panel(lemma: str) -> None:
     """答完/显示答案后，展示中文词义 + 可选的 Anki 富内容。"""
     zh = word_zh(lemma)
     if zh:
         st.markdown(f"**释义**：{zh}")
+    render_vocab_provenance(lemma)
     state = card_state_cached(lemma)
     if state["status"] == "ok":
         cm = anki_mod.core_meaning_text(enrich_cached(lemma))

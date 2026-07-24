@@ -27,6 +27,7 @@ _CATEGORY_BY_POS = {
 @dataclass(frozen=True)
 class MergeResult:
     added: int
+    provenance_added: int
     skipped_existing: int
     skipped_duplicate: int
 
@@ -60,7 +61,7 @@ def _new_entry(row: dict, *, lesson: str, index: int) -> dict:
     if fem is None:
         fem = vocab.feminine_form(masc, fem_raw)
     category = row.get("category") or _CATEGORY_BY_POS.get(pos, "AUTRES")
-    return {
+    entry = {
         "lemma": lemma,
         "pos": pos,
         "zh": zh,
@@ -72,6 +73,38 @@ def _new_entry(row: dict, *, lesson: str, index: int) -> dict:
         "fem": fem,
         "fem_raw": fem_raw,
     }
+    provenance = vocab.normalize_provenance_list(
+        row.get("provenance"),
+        context=f"input row {index} provenance",
+    )
+    if provenance:
+        entry["provenance"] = provenance
+    return entry
+
+
+def _merge_provenance(target: dict, incoming: dict) -> int:
+    """Append genuinely new provenance records without touching learning fields."""
+    incoming_items = incoming.get("provenance") or []
+    if not incoming_items:
+        return 0
+    existing = vocab.normalize_provenance_list(
+        target.get("provenance"),
+        context=f"target lemma {target.get('lemma', '')} provenance",
+    )
+    existing_keys = {
+        json.dumps(item, ensure_ascii=False, sort_keys=True)
+        for item in existing
+    }
+    added = 0
+    for item in incoming_items:
+        key = json.dumps(item, ensure_ascii=False, sort_keys=True)
+        if key not in existing_keys:
+            existing.append(item)
+            existing_keys.add(key)
+            added += 1
+    if added:
+        target["provenance"] = existing
+    return added
 
 
 def merge_vocab(vocab_path: str | Path, incoming: Iterable[dict]) -> MergeResult:
@@ -81,8 +114,8 @@ def merge_vocab(vocab_path: str | Path, incoming: Iterable[dict]) -> MergeResult
     if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
         raise ValueError("target vocab must be a JSON array of objects")
 
-    existing_keys = {
-        _lemma_key(row.get("lemma", ""))
+    target_by_key = {
+        _lemma_key(row.get("lemma", "")): row
         for row in rows
         if isinstance(row.get("lemma"), str) and row["lemma"].strip()
     }
@@ -91,6 +124,7 @@ def merge_vocab(vocab_path: str | Path, incoming: Iterable[dict]) -> MergeResult
     additions: list[dict] = []
     skipped_existing = 0
     skipped_duplicate = 0
+    provenance_added = 0
 
     for index, source in enumerate(incoming, 1):
         if not isinstance(source, dict):
@@ -103,21 +137,24 @@ def merge_vocab(vocab_path: str | Path, incoming: Iterable[dict]) -> MergeResult
             if previous != signature:
                 raise ValueError(f"conflicting duplicate lemma in input: {entry['lemma']}")
             skipped_duplicate += 1
+            provenance_added += _merge_provenance(target_by_key[key], entry)
             continue
         seen_batch[key] = signature
-        if key in existing_keys:
+        if key in target_by_key:
             skipped_existing += 1
+            provenance_added += _merge_provenance(target_by_key[key], entry)
             continue
-        existing_keys.add(key)
         additions.append(entry)
+        target_by_key[key] = entry
 
-    if additions:
+    if additions or provenance_added:
         path.write_text(
             json.dumps(rows + additions, ensure_ascii=False, indent=2) + "\n",
             "utf-8",
         )
     return MergeResult(
         added=len(additions),
+        provenance_added=provenance_added,
         skipped_existing=skipped_existing,
         skipped_duplicate=skipped_duplicate,
     )
@@ -141,6 +178,7 @@ def main() -> None:
     result = merge_vocab(args.vocab, incoming)
     print(
         f"input={len(incoming)} added={result.added} "
+        f"provenance_added={result.provenance_added} "
         f"skipped_existing={result.skipped_existing} "
         f"skipped_duplicate={result.skipped_duplicate}"
     )

@@ -175,3 +175,39 @@ def test_load_all_vocab_keeps_per_lesson_zh(tmp_path):
     per = by_lemma["volontiers"]["zh_by_lesson"]
     assert per["L20"] == "乐意地，很愿意"
     assert per["L21"] == "欣然，乐意地"
+
+
+def test_load_all_vocab_keeps_provenance_per_lesson(tmp_path):
+    base = tmp_path / "本地录屏课"
+    (base / "L30").mkdir(parents=True)
+    (base / "L31").mkdir(parents=True)
+    p30 = {
+        "source_kind": "opening_review",
+        "source_ref": "L30:opening-review",
+        "teacher_action": "review",
+        "selection_reason": "开场复习时再次强调",
+        "evidence": {"file": "L30/transcript.md", "time": "00:02:00"},
+    }
+    p31 = {
+        "source_kind": "reading_question",
+        "source_ref": "L31:T5Q10:option-B",
+        "teacher_action": "synonym",
+        "selection_reason": "讲选项关键词时补充的近义词",
+        "evidence": {"file": "L31/transcript.md", "time": "01:12:00"},
+    }
+    for lesson, provenance in (("L30", p30), ("L31", p31)):
+        (base / lesson / "vocab.json").write_text(json.dumps(
+            [{
+                "lemma": "se mettre à",
+                "pos": "verb",
+                "zh": "开始做",
+                "lesson": lesson,
+                "provenance": [provenance],
+            }],
+            ensure_ascii=False,
+        ), "utf-8")
+
+    by_lemma, _ = load_all_vocab(base)
+
+    assert by_lemma["se mettre à"]["provenance_by_lesson"]["L30"] == [p30]
+    assert by_lemma["se mettre à"]["provenance_by_lesson"]["L31"] == [p31]
