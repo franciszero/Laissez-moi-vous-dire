@@ -339,7 +339,7 @@ def render_vocab_provenance(lemma: str) -> None:
     records = word_provenance(lemma)
     if not records:
         return
-    with st.expander("📚 为什么收录这个词"):
+    with st.expander("📚 为什么收录这个词", expanded=True):
         for index, (lesson, item) in enumerate(records):
             if index:
                 st.divider()

@@ -65,16 +65,16 @@ different classroom occurrences append.
 - Do not require provenance retroactively for unrelated legacy lessons.
 - Keep `[T…Q…]` prefixes readable for backward compatibility, but treat the
   structured array as the canonical provenance.
-- Use Streamlit's existing `st.expander` affordance. Provenance remains
-  available with the active prompt; the answer and learning panel keep their
-  independent reveal behavior.
+- Use Streamlit's existing `st.expander(expanded=True)` affordance. Provenance
+  is openly visible with the active prompt; the answer and learning panel keep
+  their independent reveal behavior.
 
 ## Verification
 
 - Regression tests prove existing row preservation, provenance append, duplicate
   suppression, and invalid-input rejection.
 - Loader tests prove the same lemma can retain different provenance by lesson.
-- App test proves the explanation is available before answer reveal while the
+- App test proves the explanation is expanded before answer reveal while the
   answer panel remains hidden.
 - Course-data checks compare pre/post L31 lemma count and word-store IDs.
 - L31 coverage check requires structured provenance on all 117 rows.

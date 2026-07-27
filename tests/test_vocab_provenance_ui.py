@@ -31,7 +31,10 @@ def test_l31_provenance_is_available_before_answer_without_revealing_answer_pane
         at.run()
 
         assert not at.exception
-        assert "📚 为什么收录这个词" in [item.label for item in at.expander]
+        provenance_expander = next(
+            item for item in at.expander if item.label == "📚 为什么收录这个词"
+        )
+        assert provenance_expander.proto.expanded is True
         rendered = "\n".join(item.value for item in at.markdown)
         assert "L31 · 阅读 Test 5 · 第 8 题" in rendered
         assert "纠正把 `plat` 理解成盘子的错误" in rendered
