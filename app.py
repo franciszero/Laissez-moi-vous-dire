@@ -303,12 +303,13 @@ def _provenance_source_label(source_ref: str) -> str:
             f"阅读 Test {test_no} · 第 {question_no} 题"
         )
     match = re.fullmatch(
-        r"(L\d+):T(\d+)Q(\d+)(?::option-([A-D]))?",
+        r"(L\d+):T(\d+)Q(\d+(?:/Q\d+)*)(?::option-([A-D]))?",
         source_ref,
         flags=re.IGNORECASE,
     )
     if match:
-        lesson, test_no, question_no, option = match.groups()
+        lesson, test_no, question_refs, option = match.groups()
+        question_no = "、".join(re.findall(r"\d+", question_refs))
         label = f"{lesson} · 阅读 Test {test_no} · 第 {question_no} 题"
         if option:
             label += f" · 选项 {option.upper()}"

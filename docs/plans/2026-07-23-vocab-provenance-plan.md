@@ -52,8 +52,8 @@ different classroom occurrences append.
 - [x] Add behavior-focused merge, loader, and learner-surface tests.
 - [x] Update lifecycle, launch, and screenshot-ingest skills to require the
       contract for newly selected vocabulary.
-- [x] Backfill the 48 previously unprefixed L31 rows from the existing
-      provenance audit.
+- [x] Backfill all 117 L31 rows: 48 from the provenance audit and the remaining
+      69 from the screenshot review ledger.
 - [x] Verify L31 remains 117 lemmas and existing word IDs/progress are stable.
 - [x] Run the full app suite, restart 8501, and perform a health/UI check.
 
@@ -77,4 +77,5 @@ different classroom occurrences append.
 - App test proves the explanation is available before answer reveal while the
   answer panel remains hidden.
 - Course-data checks compare pre/post L31 lemma count and word-store IDs.
+- L31 coverage check requires structured provenance on all 117 rows.
 - Full `pytest`, Streamlit boot, and HTTP health checks complete the release.

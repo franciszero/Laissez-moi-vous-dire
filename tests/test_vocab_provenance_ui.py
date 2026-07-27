@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 
 import store
@@ -16,8 +17,8 @@ def test_l31_provenance_is_available_before_answer_without_revealing_answer_pane
         assert not at.exception
         at.selectbox(key="mode").set_value("听法语 → 敲法语").run()
 
-        word_id = store.get_ids_for_lemmas(["se mettre à"])[0]
-        word = {"id": word_id, "text": "se mettre à"}
+        word_id = store.get_ids_for_lemmas(["une assiette"])[0]
+        word = {"id": word_id, "text": "une assiette"}
         at.session_state.pool = [word_id]
         at.session_state.index = 1
         at.session_state.current_word = word
@@ -32,12 +33,10 @@ def test_l31_provenance_is_available_before_answer_without_revealing_answer_pane
         assert not at.exception
         assert "📚 为什么收录这个词" in [item.label for item in at.expander]
         rendered = "\n".join(item.value for item in at.markdown)
-        assert "L31 · 阅读 Test 5 · 第 15 题 · 选项 D" in rendered
-        assert "为解释前缀 re-" in rendered
+        assert "L31 · 阅读 Test 5 · 第 8 题" in rendered
+        assert "纠正把 `plat` 理解成盘子的错误" in rendered
         assert "对比辨析" in rendered
-        assert "1157-1231" in rendered
-        captions = "\n".join(item.value for item in at.caption)
-        assert "不属于选项的完整表层词形" in captions
+        assert "32:30-35:30 · 50" in rendered
         assert not any(item.value.startswith("答案：") for item in at.info)
 
         next(button for button in at.button if button.label == "显示答案").click().run()
@@ -50,3 +49,10 @@ def test_l31_provenance_is_available_before_answer_without_revealing_answer_pane
             shutil.copy2(backup_path, db_path)
         elif db_path.exists():
             db_path.unlink()
+
+
+def test_every_l31_word_has_structured_provenance():
+    rows = json.loads(Path("../L31/vocab.json").read_text("utf-8"))
+
+    assert len(rows) == 117
+    assert all(row.get("provenance") for row in rows)
