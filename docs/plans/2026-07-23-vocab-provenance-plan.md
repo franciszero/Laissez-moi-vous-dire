@@ -79,3 +79,13 @@ different classroom occurrences append.
 - Course-data checks compare pre/post L31 lemma count and word-store IDs.
 - L31 coverage check requires structured provenance on all 117 rows.
 - Full `pytest`, Streamlit boot, and HTTP health checks complete the release.
+
+## Evidence localization hardening
+
+- [x] Treat direct-transcript time and line anchors as ordered pairs.
+- [x] Reject missing files, out-of-range lines, unequal pair counts, and line
+      ranges whose transcript headers do not overlap the declared time.
+- [x] Repair the coarse L31 opening-review anchors without changing vocabulary
+      identity or learning fields.
+- [x] Run the skill self-test, skill validation, app suite, launch verifier, and
+      live 8501 check.

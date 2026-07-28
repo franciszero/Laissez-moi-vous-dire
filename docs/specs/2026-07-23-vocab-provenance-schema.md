@@ -55,3 +55,11 @@ The canonical field is a per-entry `provenance` array:
    broader lesson/transcript association.
 6. Legacy rows may omit provenance. New launch and screenshot-ingest selections
    may not.
+7. When `evidence.file` points directly to a timestamped transcript, every
+   disjoint `evidence.time` interval must have a same-position line range in
+   `evidence.lines`, and that range must contain an overlapping transcript
+   timestamp header. For example:
+   `"time": "05:30-06:00; 17:30-18:00"` pairs with
+   `"lines": "111-114; 270-275"`. Never reuse one coarse line range for two
+   disconnected transcript intervals. A review ledger may summarize several
+   intervals at one line only when that ledger line is the cited evidence.
