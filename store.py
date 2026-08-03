@@ -271,3 +271,108 @@ def get_attempts_for_words(word_ids):
     for wid, ok, ts, skill in rows:
         out.setdefault(wid, []).append((bool(ok), ts, skill or "transcribe"))
     return out
+
+
+# ---------- 写作练习：草稿与版本（独立历史，不碰 words/checkpoints/ai_attempts） ----------
+
+def _ensure_writing_tables(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS writing_drafts (
+            task_id TEXT PRIMARY KEY,
+            text TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS writing_versions (
+            version_id TEXT PRIMARY KEY,
+            task_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            parent_version_id TEXT
+        )
+    """)
+    conn.commit()
+
+
+def save_writing_draft(task_id: str, text: str):
+    from writing.contracts import WritingDraft
+    now = _now()
+    conn = get_conn()
+    try:
+        _ensure_writing_tables(conn)
+        conn.execute(
+            "INSERT INTO writing_drafts (task_id, text, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(task_id) DO UPDATE SET text = excluded.text, "
+            "updated_at = excluded.updated_at",
+            (task_id, text, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return WritingDraft(task_id, text, now)
+
+
+def load_writing_draft(task_id: str):
+    from writing.contracts import WritingDraft
+    conn = get_conn()
+    try:
+        _ensure_writing_tables(conn)
+        row = conn.execute(
+            "SELECT task_id, text, updated_at FROM writing_drafts WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    return WritingDraft(*row) if row else None
+
+
+def submit_writing_version(task_id: str, text: str, parent_version_id: str | None = None):
+    from uuid import uuid4
+
+    from writing.contracts import WritingVersion
+    v = WritingVersion(uuid4().hex, task_id, text, _now(), parent_version_id)
+    conn = get_conn()
+    try:
+        _ensure_writing_tables(conn)
+        conn.execute(   # 只 INSERT：版本不可覆盖、不可删除
+            "INSERT INTO writing_versions "
+            "(version_id, task_id, text, created_at, parent_version_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (v.version_id, v.task_id, v.text, v.created_at, v.parent_version_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return v
+
+
+def list_writing_versions(task_id: str):
+    from writing.contracts import WritingVersion
+    conn = get_conn()
+    try:
+        _ensure_writing_tables(conn)
+        rows = conn.execute(
+            "SELECT version_id, task_id, text, created_at, parent_version_id "
+            "FROM writing_versions WHERE task_id = ? ORDER BY rowid",
+            (task_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return tuple(WritingVersion(*r) for r in rows)
+
+
+class StoreWritingHistory:
+    """WritingHistoryPort 的 SQLite 真适配器（DB 访问归顶层 store.py 所有）。"""
+
+    def load_draft(self, task_id: str):
+        return load_writing_draft(task_id)
+
+    def save_draft(self, task_id: str, text: str):
+        return save_writing_draft(task_id, text)
+
+    def submit_version(self, task_id: str, text: str, parent_version_id: str | None = None):
+        return submit_writing_version(task_id, text, parent_version_id)
+
+    def list_versions(self, task_id: str):
+        return list_writing_versions(task_id)
