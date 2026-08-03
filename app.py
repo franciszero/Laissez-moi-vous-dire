@@ -1,5 +1,6 @@
 import html
 import json
+import os
 import random
 import re
 import sqlite3
@@ -1165,6 +1166,37 @@ def _leave_overlays() -> None:
     st.session_state.llm_loaded = False
     st.session_state.pop("llm_error", None)
     st.session_state.cp_active = False
+    st.session_state.pop("writing_active", None)   # 写作视图同属覆盖层
+
+
+def _writing_content():
+    from writing.content import JsonWritingContent
+    return JsonWritingContent(Path(os.environ.get("WRITING_CONTENT_ROOT", "..")))
+
+
+def _writing_task_summaries(lesson: str) -> list:
+    if lesson == "全部":
+        return []
+    from writing.content import ContentError
+    try:
+        return list(_writing_content().list_tasks(lesson))
+    except ContentError as e:
+        st.caption(f"⚠️ 写作内容文件有误：{e}")
+        return []
+
+
+def _exit_writing() -> None:
+    st.session_state.pop("writing_active", None)
+    for k in [k for k in st.session_state if isinstance(k, str) and k.startswith("wr_")]:
+        st.session_state.pop(k, None)
+
+
+def render_writing_view() -> None:
+    from store import StoreWritingHistory
+    from writing import ui as writing_ui
+    from writing.service import WritingService
+    service = WritingService(_writing_content(), StoreWritingHistory())
+    writing_ui.render_writing(service, st.session_state.get("sel_lesson", ""), _exit_writing)
 
 
 st.title("法语听写复习器")
@@ -1243,6 +1275,13 @@ with st.sidebar:
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         _start_cards(_cards, f"知识点 · {chosen_lesson}", chosen_lesson)
+        st.rerun()
+
+    _wr_tasks = _writing_task_summaries(chosen_lesson)
+    if st.button(f"✍️ 写作练习（{len(_wr_tasks)}）", disabled=not _wr_tasks):
+        _leave_overlays()
+        save_setting("last_lesson", chosen_lesson)
+        st.session_state["writing_active"] = True
         st.rerun()
     st.caption("错词=做错过的；到期=顶部按遗忘曲线提醒；变形=有阴阳性的词；知识点=老师讲的非单词要点（含动词变位 + AI 造句批改；AI 卡提交时才加载本地模型）。")
 
@@ -2416,7 +2455,9 @@ def _render_conj_card(card: dict, i: int, total: int, *, set_index, on_exit, exi
 # 左侧原生边栏词表（像 GPT/Claude 主页：自带折叠按钮，折叠后主区满宽）
 with st.sidebar:
     st.divider()
-    if st.session_state.get("cp_active"):
+    if st.session_state.get("writing_active"):
+        _selected = None                     # 写作视图不显示词表/知识点侧栏
+    elif st.session_state.get("cp_active"):
         render_checkpoint_panel()
         _selected = None
     else:
@@ -2428,7 +2469,9 @@ if _selected != st.session_state.get("last_selected"):
     st.session_state.hide_preview = False
 _show_card = bool(_selected) and not st.session_state.get("hide_preview", False)
 
-if st.session_state.get("cp_active"):
+if st.session_state.get("writing_active"):
+    render_writing_view()
+elif st.session_state.get("cp_active"):
     render_checkpoint()
 else:
     # 唯一「今天到期」入口（词 + 知识点卡）：侧栏不再有重复的到期按钮（按当前选课作用域）
