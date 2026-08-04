@@ -127,7 +127,7 @@ def test_assembly_line_groups_by_step():
     """组装线按 step 分组，标出步号与步名。"""
     at = _app()
     joined = " ".join(m.value for m in at.markdown)
-    assert "步 5" in joined and "提出请求" in joined, "缺少步号分组标题"
+    assert "步 5" in joined and "房型" in joined, "缺少步号分组标题"
     assert "请求句型" in joined, "带 step 的弹药应出现在组装线里"
 
 
