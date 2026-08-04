@@ -71,3 +71,12 @@ def test_submit_empty_shows_warning_no_version():
     # 无版本时历史里没有选择框。注意 AppTest 的 at.selectbox(key=...) 找不到 key 时
     # 抛 KeyError（不返回 None），所以断言 key 不在 widget 列表里，而不是断言返回值为 None。
     assert all(s.key != "wr_hist_sel" for s in at.selectbox)
+
+
+def test_right_panel_is_height_bounded():
+    """右栏必须封在固定高度容器里，否则资料区会把编辑器顶出视野。"""
+    src = Path(__file__).parents[1] / "writing" / "ui.py"
+    text = src.read_text(encoding="utf-8")
+    assert "_RIGHT_PANEL_HEIGHT = 620" in text, "缺少固定高度常量"
+    assert "st.container(height=_RIGHT_PANEL_HEIGHT)" in text, "右栏未使用固定高度容器"
+    assert "def _render_right_body(" in text, "内容渲染未拆出 _render_right_body"

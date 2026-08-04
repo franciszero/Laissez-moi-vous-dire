@@ -56,6 +56,7 @@ def _render_left(service: WritingService, task: WritingTask, draft, versions) ->
             st.rerun()
 
 
+_RIGHT_PANEL_HEIGHT = 620   # px；与左栏「正文框 + 字数 + 按钮」大致齐平，资料区在框内滚动
 _SLOT_ICON = {"must": "⭕", "bonus": "➕", "risk": "⚠️"}
 _REVIEW_BADGE = {"teacher_reviewed": "老师核验", "ai_draft": "AI 起草", "needs_review": "待核对"}
 
@@ -77,6 +78,11 @@ def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
 
 
 def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
+    with st.container(height=_RIGHT_PANEL_HEIGHT):   # 资料区内部滚动，编辑器不被顶出视野
+        _render_right_body(task, versions)
+
+
+def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
     tabs = st.tabs(["题目拆解", "骨架/逻辑", "弹药库", "老师讲解", "历史"])
 
     with tabs[0]:
