@@ -55,7 +55,7 @@ def _parse_support(d: dict) -> WritingSupport:
         support_id=d["support_id"], scope=d["scope"], category=d["category"],
         title=d["title"], body=d["body"], review=d["review"], order=d["order"],
         modality=d.get("modality", "writing"), conditions=d.get("conditions", ""),
-        source=_parse_source(d.get("source")),
+        source=_parse_source(d.get("source")), step=str(d.get("step", "")),
     )
 
 

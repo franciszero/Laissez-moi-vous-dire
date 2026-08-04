@@ -47,6 +47,7 @@ class WritingSupport:
     modality: Modality = "writing"
     conditions: str = ""
     source: SourceRef | None = None
+    step: str = ""                       # 组装线步号（"1".."7"）；空串=不参与组装线
 
 
 @dataclass(frozen=True)

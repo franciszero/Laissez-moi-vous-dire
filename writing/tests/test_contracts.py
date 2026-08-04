@@ -58,3 +58,11 @@ def test_draft_version_summary():
         d.text = "x"
     with pytest.raises(dataclasses.FrozenInstanceError):
         s.title = "x"
+
+
+def test_support_step_defaults_to_empty():
+    """step 是组装线用的可选步号，不写时为空串（向后兼容既有内容）。"""
+    base = dict(support_id="s1", scope="task", category="outline", title="骨架",
+                body="称呼→目的→请求", review="teacher_reviewed", order=1)
+    assert WritingSupport(**base).step == ""
+    assert WritingSupport(**{**base, "support_id": "s2", "step": "4"}).step == "4"
