@@ -80,3 +80,20 @@ def test_right_panel_is_height_bounded():
     assert "_RIGHT_PANEL_HEIGHT = 620" in text, "缺少固定高度常量"
     assert "st.container(height=_RIGHT_PANEL_HEIGHT)" in text, "右栏未使用固定高度容器"
     assert "def _render_right_body(" in text, "内容渲染未拆出 _render_right_body"
+
+
+def test_info_column_is_wider_than_editor():
+    """写作文不需要宽度，资料区多行阅读需要宽度。"""
+    src = Path(__file__).parents[1] / "writing" / "ui.py"
+    text = src.read_text(encoding="utf-8")
+    assert "st.columns([2, 3])" in text, "资料区应比编辑区宽"
+    assert "st.columns([3, 2])" not in text, "旧的 3:2 比例应已移除"
+
+
+def test_task_breakdown_is_one_markdown_block():
+    """题目拆解整段必须合并成一次 st.markdown，否则每条槽位之间被塞 16px 块间距。"""
+    at = _app()
+    merged = [m.value for m in at.markdown if "得分槽位" in m.value]
+    assert merged, "找不到得分槽位块"
+    assert "budget" in merged[0] and "formule de politesse" in merged[0], \
+        "全部槽位应与标题同在一个 markdown 块内"

@@ -24,7 +24,7 @@ def render_writing(service: WritingService, lesson: str, on_exit) -> None:
         on_exit()
         st.rerun()
 
-    left, right = st.columns([3, 2])
+    left, right = st.columns([2, 3])   # 写作文不需要宽，资料区多行阅读需要宽
     with left:
         _render_left(service, task, draft, versions)
     with right:
@@ -86,15 +86,22 @@ def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) 
     tabs = st.tabs(["题目拆解", "骨架/逻辑", "弹药库", "老师讲解", "历史"])
 
     with tabs[0]:
-        st.markdown(f"**任务类型** {task.tcf_task_type} ｜ **受众** {task.audience} "
-                    f"｜ **语域** {task.register}")
-        st.markdown(f"**交际目的** {task.purpose}")
-        st.markdown(f"**字数** {task.word_min}–{task.word_max} 词")
-        st.markdown("**得分槽位**（⭕漏答必失分 ➕加分 ⚠️扣分风险）")
+        lines = [
+            f"**任务类型** {task.tcf_task_type} ｜ **受众** {task.audience} "
+            f"｜ **语域** {task.register}",
+            "",
+            f"**交际目的** {task.purpose}",
+            "",
+            f"**字数** {task.word_min}–{task.word_max} 词",
+            "",
+            "**得分槽位**（⭕漏答必失分 ➕加分 ⚠️扣分风险）",
+            "",
+        ]
         for slot in task.slots:
             icon = _SLOT_ICON.get(slot.kind, "•")
             note = f" — {slot.note}" if slot.note else ""
-            st.markdown(f"- {icon} {slot.label}（{slot.origin}）{note}")
+            lines.append(f"- {icon} {slot.label}（{slot.origin}）{note}")
+        st.markdown("\n".join(lines))   # 合并成一个块：避免每条槽位之间被塞 16px 块间距
 
     with tabs[1]:
         _render_supports(task, ("outline", "logic"))
