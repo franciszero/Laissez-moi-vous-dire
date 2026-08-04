@@ -21,7 +21,7 @@ def _task() -> WritingTask:
             WritingSupport("sup1", "task", "outline", "段落骨架",
                            "称呼 → 目的 → 请求 → 结尾", "teacher_reviewed", 1),
             WritingSupport("sup2", "task", "language_ammo", "请求句型",
-                           "Pourrais-tu m'aider à …", "ai_draft", 2),
+                           "Pourrais-tu m'aider à …", "ai_draft", 2, step="5"),
             WritingSupport("sup3", "task_type", "teacher_tip", "老师嘱咐",
                            "可以查词组，不要查整句", "teacher_reviewed", 3),
         ),

@@ -56,6 +56,15 @@ def _render_left(service: WritingService, task: WritingTask, draft, versions) ->
             st.rerun()
 
 
+_LEGEND = (
+    ":green-background[绿底]:gray[＝老师核验·直接抄]　"
+    ":orange-background[橙底]:gray[＝AI 起草·可抄]　"
+    ":red-background[红底]:gray[＝转录重构·核了再抄]　"
+    ":gray[⭕必答 ➕加分 ⚠️风险]"
+)
+# T1 骨架七步；将来 T2/T3 有别的骨架时应移入内容层，不要在这里堆
+_STEP_NAME = {"1": "Objet（名词格）", "2": "称呼", "3": "说明目的", "4": "因果过渡",
+              "5": "提出请求", "6": "三项必答信息", "7": "结尾"}
 _RIGHT_PANEL_HEIGHT = 620   # px；与左栏「正文框 + 字数 + 按钮」大致齐平，资料区在框内滚动
 _SLOT_ICON = {"must": "⭕", "bonus": "➕", "risk": "⚠️"}
 _REVIEW_BADGE = {"teacher_reviewed": "老师核验", "ai_draft": "AI 起草", "needs_review": "待核对"}
@@ -77,40 +86,88 @@ def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
             st.markdown(_support_line(sup))
 
 
+def _render_breakdown(task: WritingTask) -> None:
+    """题目拆解：两张窄表，槽位是二维数据，不该串成 bullet。"""
+    def _cell(t: str) -> str:
+        return t.replace("|", "｜").replace("\n", " ")
+
+    lines = [
+        f"`{task.tcf_task_type}`　:gray[受众] {task.audience}　"
+        f":gray[语域] {task.register}　:gray[字数] {task.word_min}–{task.word_max} 词",
+        "", f":gray[交际目的] {task.purpose}",
+        "", "**⭕ 必答清单**　:gray[交卷前逐项点一遍]", "",
+        "| | 槽位 | 来源 |", "|---|---|---|",
+    ]
+    for s in task.slots:
+        if s.kind == "must":
+            lines.append(f"| ⭕ | **{_cell(s.label)}** | :gray[{s.origin}] |")
+    lines += ["", "**⚠️ 扣分风险**", "", "| 风险 | 一句话 |", "|---|---|"]
+    for s in task.slots:
+        if s.kind == "risk":
+            one = _cell(s.note.split("。")[0].replace("⚠️ ", ""))
+            lines.append(f"| ⚠️ **{_cell(s.label)}** | :gray[{one}] |")
+    bonus = [s for s in task.slots if s.kind == "bonus"]
+    if bonus:
+        lines += ["", "**➕ 加分项**", ""]
+        lines += [f"- ➕ {_cell(s.label)}　:gray[{_cell(s.note)}]" for s in bonus]
+    st.markdown("\n".join(lines))
+
+
+def _render_flat(task: WritingTask, categories: tuple[str, ...]) -> None:
+    """平铺：正文一眼可扫，不再逐条折叠。"""
+    sups = [s for s in task.supports if s.category in categories]
+    if not sups:
+        st.caption("（暂无内容）")
+        return
+    buf = []
+    for sup in sups:
+        buf += [_support_line(sup), ""]
+    st.markdown("\n".join(buf))
+
+
+def _render_ammo(task: WritingTask) -> None:
+    """弹药库双视图：组装线按 step 分组供写作，详解按 category 折叠供吸收。"""
+    view = st.segmented_control(
+        "视图", ["🔧 组装线", "📖 详解"], default="🔧 组装线",
+        key="wr_ammo_view", label_visibility="collapsed",
+    )
+    if view == "📖 详解":
+        _render_supports(task, ("content_ammo", "language_ammo"))
+        if task.reference_text:
+            with st.expander("📄 参考全文（展开即照抄模式）", expanded=False):
+                st.markdown(task.reference_text)
+        return
+    line = [s for s in task.supports if s.step]
+    if not line:
+        st.caption("这道题还没标注组装步骤，请切到「详解」。")
+        return
+    buf = []
+    for step in sorted({s.step for s in line}):
+        name = _STEP_NAME.get(step, "")
+        buf += [f"**步 {step}" + (f" · {name}**" if name else "**"), ""]
+        for sup in sorted((s for s in line if s.step == step),
+                          key=lambda s: (s.order, s.support_id)):
+            buf += [_support_line(sup), ""]
+    st.markdown("\n".join(buf))
+
+
 def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
     with st.container(height=_RIGHT_PANEL_HEIGHT):   # 资料区内部滚动，编辑器不被顶出视野
         _render_right_body(task, versions)
 
 
 def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
+    st.caption(_LEGEND)
     tabs = st.tabs(["题目拆解", "骨架/逻辑", "弹药库", "老师讲解", "历史"])
 
     with tabs[0]:
-        lines = [
-            f"**任务类型** {task.tcf_task_type} ｜ **受众** {task.audience} "
-            f"｜ **语域** {task.register}",
-            "",
-            f"**交际目的** {task.purpose}",
-            "",
-            f"**字数** {task.word_min}–{task.word_max} 词",
-            "",
-            "**得分槽位**（⭕漏答必失分 ➕加分 ⚠️扣分风险）",
-            "",
-        ]
-        for slot in task.slots:
-            icon = _SLOT_ICON.get(slot.kind, "•")
-            note = f" — {slot.note}" if slot.note else ""
-            lines.append(f"- {icon} {slot.label}（{slot.origin}）{note}")
-        st.markdown("\n".join(lines))   # 合并成一个块：避免每条槽位之间被塞 16px 块间距
+        _render_breakdown(task)
 
     with tabs[1]:
-        _render_supports(task, ("outline", "logic"))
+        _render_flat(task, ("outline", "logic"))
 
     with tabs[2]:
-        _render_supports(task, ("content_ammo", "language_ammo"))
-        if task.reference_text:
-            with st.expander("📄 参考全文（展开即照抄模式）", expanded=False):
-                st.markdown(task.reference_text)
+        _render_ammo(task)
 
     with tabs[3]:
         _render_supports(task, ("teacher_tip",))

@@ -93,7 +93,54 @@ def test_info_column_is_wider_than_editor():
 def test_task_breakdown_is_one_markdown_block():
     """题目拆解整段必须合并成一次 st.markdown，否则每条槽位之间被塞 16px 块间距。"""
     at = _app()
-    merged = [m.value for m in at.markdown if "得分槽位" in m.value]
-    assert merged, "找不到得分槽位块"
+    merged = [m.value for m in at.markdown if "必答清单" in m.value]
+    assert merged, "找不到必答清单块"
+    assert "扣分风险" in merged[0], "必答清单与扣分风险应在同一个 markdown 块内"
     assert "budget" in merged[0] and "formule de politesse" in merged[0], \
         "全部槽位应与标题同在一个 markdown 块内"
+
+
+def test_legend_row_is_shown():
+    """图例常驻，五个标签共用一份。"""
+    at = _app()
+    assert any("老师核验" in c.value and "转录重构" in c.value for c in at.caption), \
+        "找不到图例行"
+
+
+def test_breakdown_renders_as_tables():
+    """槽位是二维数据，用表格而不是 bullet。"""
+    at = _app()
+    merged = [m.value for m in at.markdown if "必答清单" in m.value][0]
+    assert "|---|" in merged, "必答清单应是 markdown 表格"
+    assert merged.count("|---|") >= 2, "必答清单与扣分风险应各有一张表"
+
+
+def test_ammo_defaults_to_assembly_view():
+    at = _app()
+    w = at.segmented_control(key="wr_ammo_view")
+    assert w is not None and w.value == "🔧 组装线"
+
+
+def test_assembly_line_groups_by_step():
+    """组装线按 step 分组，标出步号与步名。"""
+    at = _app()
+    joined = " ".join(m.value for m in at.markdown)
+    assert "步 5" in joined and "提出请求" in joined, "缺少步号分组标题"
+    assert "请求句型" in joined, "带 step 的弹药应出现在组装线里"
+
+
+def test_detail_view_restores_expanders():
+    """切到详解，弹药回到折叠块（供吸收，不供边写边挑）。"""
+    at = _app()
+    before = len(at.expander)
+    at.segmented_control(key="wr_ammo_view").set_value("📖 详解").run()
+    assert not at.exception
+    assert len(at.expander) > before, "详解视图应多出弹药折叠块"
+    assert any(e.label == "请求句型" for e in at.expander)
+
+
+def test_skeleton_tab_is_flat():
+    """骨架/逻辑 平铺，不再逐条折叠。"""
+    at = _app()
+    assert not any(e.label == "段落骨架" for e in at.expander), "骨架条目不应再是折叠块"
+    assert any("段落骨架" in m.value for m in at.markdown), "骨架条目应平铺进 markdown"
