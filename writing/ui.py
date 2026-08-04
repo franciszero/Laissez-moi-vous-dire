@@ -8,6 +8,7 @@ from writing.service import WritingService
 
 
 def render_writing(service: WritingService, lesson: str, on_exit) -> None:
+    st.markdown(_STYLE, unsafe_allow_html=True)   # 纯装饰样式，每次 rerun 重发一遍
     tasks = service.list_tasks(lesson)
     if not tasks:
         st.info("这一课还没有写作题。")
@@ -55,6 +56,25 @@ def _render_left(service: WritingService, task: WritingTask, draft, versions) ->
             service.submit_version(task.task_id, text, parent)
             st.rerun()
 
+
+_STYLE = """
+<style>
+/* 写作资料区样式。挂载点是 st.container(key=...) 生成的 st-key-* class——
+   那是 Streamlit 按我们给的 key 生成的受支持行为，不是 st-emotion-cache-* 那类
+   会随版本变的编译产物。要换色/换密度只改这一段，不用碰渲染代码。 */
+[class*="st-key-wr_step_"] {
+    background: rgba(49, 51, 63, .045);
+    border-radius: 8px;
+    padding: 6px 12px !important;   /* Streamlit 自带 padding 优先级更高，必须 important */
+    margin-bottom: 6px;
+}
+[class*="st-key-wr_legend"] p {
+    font-size: .85em;               /* 视觉上等同 caption，但不带 caption 的 opacity:.6
+                                       —— 那个 opacity 会把 10% 的底色乘成 6%，等于没有 */
+    margin-bottom: .25rem;
+}
+</style>
+"""
 
 _LEGEND = (
     ":green-background[绿底]:gray[＝老师核验·直接抄]　"
@@ -150,7 +170,7 @@ def _render_ammo(task: WritingTask) -> None:
                        key=lambda s: (s.order, s.support_id))
         name = _STEP_NAME.get(step, "")
         head = f"**步 {step}" + (f" · {name}**" if name else "**")
-        with st.container(border=True):   # 一步一个框：范围肉眼可见
+        with st.container(key=f"wr_step_{step}"):   # 一步一个块，样式见 _STYLE
             buf = [f"{head}　:gray[{len(items)} 条]", ""]
             for sup in items:
                 buf += [_support_line(sup), ""]
@@ -163,7 +183,8 @@ def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> No
 
 
 def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
-    st.caption(_LEGEND)
+    with st.container(key="wr_legend"):
+        st.markdown(_LEGEND)
     tabs = st.tabs(["题目拆解", "骨架/逻辑", "弹药库", "老师讲解", "历史"])
 
     with tabs[0]:

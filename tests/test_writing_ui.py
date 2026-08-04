@@ -101,10 +101,12 @@ def test_task_breakdown_is_one_markdown_block():
 
 
 def test_legend_row_is_shown():
-    """图例常驻，五个标签共用一份。"""
+    """图例常驻。必须走 markdown——caption 的 opacity:.6 会把 10% 底色乘成 6%，等于没有。"""
     at = _app()
-    assert any("老师核验" in c.value and "转录重构" in c.value for c in at.caption), \
+    assert any("老师核验" in m.value and "转录重构" in m.value for m in at.markdown), \
         "找不到图例行"
+    assert not any("老师核验" in c.value for c in at.caption), \
+        "图例不能放 caption 里，底色会被 opacity 吃掉"
 
 
 def test_breakdown_renders_as_tables():
@@ -148,9 +150,9 @@ def test_skeleton_tab_is_flat():
 
 def test_assembly_step_is_boxed_and_counted():
     """每步一个边框容器（范围可见）+ 步头带条数（未读先知量）。"""
-    src = Path(__file__).parents[1] / "writing" / "ui.py"
-    assert "st.container(border=True)" in src.read_text(encoding="utf-8"), \
-        "组装线每步应包在边框容器里"
+    src = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
+    assert 'st.container(key=f"wr_step_{step}")' in src, "每步应有独立 key 供 CSS 挂载"
+    assert '[class*="st-key-wr_step_"]' in src, "样式表应通过 st-key-* 定义步块样式"
     at = _app()
     joined = " ".join(m.value for m in at.markdown)
     assert "1 条" in joined, "步头应显示该步条数"
@@ -170,3 +172,17 @@ def test_evidence_quote_is_opt_in():
     assert "> :gray[核验" not in plain, "组装线用的默认形态不应带证据引用块"
     assert "> :gray[核验 needs_review" in rich and "ASR 三路打架" in rich, \
         "详解形态应把核验状态与来源备注显为引用块"
+
+
+def test_stylesheet_hooks_only_supported_classes():
+    """CSS 只许挂 st-key-*（Streamlit 按我们给的 key 生成，受支持）。
+    禁止挂 st-emotion-cache-*（编译产物）或 data-testid（内部结构）——升级即碎。"""
+    import re
+
+    from writing import ui
+
+    # 只查 CSS 正文并剥掉注释——注释里会写"为什么不用 st-emotion-cache"，别自己绊自己
+    css = re.sub(r"/\*.*?\*/", "", ui._STYLE, flags=re.S)
+    assert "st-key-" in css, "样式必须挂在 st-key-* 上"
+    assert "st-emotion-cache" not in css, "禁止依赖 Streamlit 编译产物类名做样式挂载"
+    assert "data-testid" not in css, "禁止依赖 Streamlit 内部 testid 做样式挂载"
