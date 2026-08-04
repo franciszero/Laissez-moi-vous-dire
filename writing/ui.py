@@ -70,10 +70,14 @@ _SLOT_ICON = {"must": "⭕", "bonus": "➕", "risk": "⚠️"}
 _REVIEW_BADGE = {"teacher_reviewed": "老师核验", "ai_draft": "AI 起草", "needs_review": "待核对"}
 
 
-def _support_line(sup) -> str:
+def _support_line(sup, with_evidence: bool = False) -> str:
     badge = _REVIEW_BADGE.get(sup.review, sup.review)
     src = f" ｜出处 {sup.source.path}:{sup.source.locator}" if sup.source else ""
-    return f"**{sup.title}**（{badge}{src}）\n\n{sup.body}"
+    out = f"**{sup.title}**（{badge}{src}）\n\n{sup.body}"
+    if with_evidence and sup.source and sup.source.note:
+        note = sup.source.note.replace("\n", " ")
+        out += f"\n\n> :gray[核验 {sup.source.verify}　{note}]"
+    return out
 
 
 def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
@@ -83,7 +87,7 @@ def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
         return
     for sup in sups:
         with st.expander(sup.title, expanded=False):
-            st.markdown(_support_line(sup))
+            st.markdown(_support_line(sup, with_evidence=True))
 
 
 def _render_breakdown(task: WritingTask) -> None:
@@ -141,14 +145,16 @@ def _render_ammo(task: WritingTask) -> None:
     if not line:
         st.caption("这道题还没标注组装步骤，请切到「详解」。")
         return
-    buf = []
     for step in sorted({s.step for s in line}):
+        items = sorted((s for s in line if s.step == step),
+                       key=lambda s: (s.order, s.support_id))
         name = _STEP_NAME.get(step, "")
-        buf += [f"**步 {step}" + (f" · {name}**" if name else "**"), ""]
-        for sup in sorted((s for s in line if s.step == step),
-                          key=lambda s: (s.order, s.support_id)):
-            buf += [_support_line(sup), ""]
-    st.markdown("\n".join(buf))
+        head = f"**步 {step}" + (f" · {name}**" if name else "**")
+        with st.container(border=True):   # 一步一个框：范围肉眼可见
+            buf = [f"{head}　:gray[{len(items)} 条]", ""]
+            for sup in items:
+                buf += [_support_line(sup), ""]
+            st.markdown("\n".join(buf))
 
 
 def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:

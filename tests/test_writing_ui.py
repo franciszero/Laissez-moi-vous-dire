@@ -144,3 +144,29 @@ def test_skeleton_tab_is_flat():
     at = _app()
     assert not any(e.label == "段落骨架" for e in at.expander), "骨架条目不应再是折叠块"
     assert any("段落骨架" in m.value for m in at.markdown), "骨架条目应平铺进 markdown"
+
+
+def test_assembly_step_is_boxed_and_counted():
+    """每步一个边框容器（范围可见）+ 步头带条数（未读先知量）。"""
+    src = Path(__file__).parents[1] / "writing" / "ui.py"
+    assert "st.container(border=True)" in src.read_text(encoding="utf-8"), \
+        "组装线每步应包在边框容器里"
+    at = _app()
+    joined = " ".join(m.value for m in at.markdown)
+    assert "1 条" in joined, "步头应显示该步条数"
+
+
+def test_evidence_quote_is_opt_in():
+    """source.note 一直不可见（标签失真的老病根）。详解显式要证据，组装线不塞。"""
+    from writing import ui
+    from writing.contracts import SourceRef, WritingSupport
+
+    sup = WritingSupport(
+        "x", "task", "logic", "标题", "正文", "teacher_reviewed", 1,
+        source=SourceRef("L33", "transcript", "t.md", "280", "needs_review", "ASR 三路打架"),
+    )
+    plain = ui._support_line(sup)
+    rich = ui._support_line(sup, with_evidence=True)
+    assert "> :gray[核验" not in plain, "组装线用的默认形态不应带证据引用块"
+    assert "> :gray[核验 needs_review" in rich and "ASR 三路打架" in rich, \
+        "详解形态应把核验状态与来源备注显为引用块"
