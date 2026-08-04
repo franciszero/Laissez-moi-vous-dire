@@ -1080,7 +1080,8 @@ def start_review_round(due_only: bool, batch_size: int) -> int:
 
 st.set_page_config(
     page_title="法语听写复习器",
-    layout="centered",
+    # 写作视图需要横向空间（双栏 + 资料区）；其余视图保持原有窄栏排版
+    layout="wide" if st.session_state.get("writing_active") else "centered",
 )
 
 

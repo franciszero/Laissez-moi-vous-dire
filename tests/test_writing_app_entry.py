@@ -66,3 +66,32 @@ def test_no_content_means_disabled_button(tmp_path, monkeypatch):
     at.selectbox(key="sel_lesson").set_value("L33").run()
     entry = next((b for b in at.button if b.label.startswith("✍️ 写作练习")), None)
     assert entry is not None and entry.disabled
+
+
+def test_page_layout_is_conditional_not_globally_wide():
+    """写作视图用 wide，其余视图保持 centered；不得把全局改成 wide。"""
+    src = Path(__file__).parents[1] / "app.py"
+    text = src.read_text(encoding="utf-8")
+    assert text.count("st.set_page_config(") == 1, "set_page_config 只能有一处"
+    assert (
+        'layout="wide" if st.session_state.get("writing_active") else "centered"' in text
+    ), "版式必须按 writing_active 条件切换，不得全局 wide、也不得保持全局 centered"
+
+
+def test_app_renders_writing_view_when_flag_preseeded(tmp_path, monkeypatch):
+    """预置 writing_active 直接进写作视图，覆盖 wide 分支，确认不抛异常。"""
+    db_path = Path("dictation.db")           # 与 test_writing_entry_roundtrip 相同的备份模式
+    backup = tmp_path / "dictation.db.bak"
+    if db_path.exists():
+        shutil.copy2(db_path, backup)
+    monkeypatch.setenv("WRITING_CONTENT_ROOT", str(_make_content_root(tmp_path)))
+    try:
+        at = AppTest.from_file("app.py", default_timeout=10)
+        at.session_state["writing_active"] = True
+        at.run()
+        assert not at.exception
+        assert at.text_area(key="wr_text_L33-W1") is not None
+        assert any(b.label == "↩︎ 退出写作" for b in at.button)
+    finally:
+        if backup.exists():
+            shutil.copy2(backup, db_path)
