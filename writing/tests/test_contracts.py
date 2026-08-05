@@ -7,6 +7,7 @@ import pytest
 
 from writing.contracts import (
     ScoreSlot,
+    SkeletonStep,
     SourceRef,
     WritingDraft,
     WritingSupport,
@@ -66,3 +67,27 @@ def test_support_step_defaults_to_empty():
                 body="称呼→目的→请求", review="teacher_reviewed", order=1)
     assert WritingSupport(**base).step == ""
     assert WritingSupport(**{**base, "support_id": "s2", "step": "4"}).step == "4"
+
+
+def test_skeleton_step_defaults():
+    """体裁骨架的一格：属于 tcf_task_type，不属于任何一道题。"""
+    st = SkeletonStep(step_id="greeting", name="称呼", kind="fixed")
+    assert st.optional is False
+    assert SkeletonStep("subject", "Objet", "fixed", optional=True).optional is True
+
+
+def test_support_declares_function_not_position():
+    """素材声明「干什么用」，位置由骨架决定——两者不同抽象层，不许压扁。"""
+    base = dict(support_id="s1", scope="task", category="outline", title="骨架",
+                body="称呼→目的→请求", review="teacher_reviewed", order=1)
+    plain = WritingSupport(**base)
+    assert plain.function == "" and plain.slot_id == ""
+    tagged = WritingSupport(**{**base, "support_id": "s2",
+                               "function": "slot_fill", "slot_id": "s3"})
+    assert tagged.function == "slot_fill" and tagged.slot_id == "s3"
+
+
+def test_task_carries_skeleton_but_defaults_empty():
+    assert make_task().skeleton == ()
+    sk = (SkeletonStep("greeting", "称呼", "fixed"),)
+    assert make_task(skeleton=sk).skeleton == sk

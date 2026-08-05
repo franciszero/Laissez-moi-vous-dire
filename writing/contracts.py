@@ -14,6 +14,10 @@ SupportCategory = Literal["outline", "logic", "content_ammo", "language_ammo", "
 ReviewStatus = Literal["teacher_reviewed", "ai_draft", "needs_review"]
 Modality = Literal["writing", "speaking", "both"]
 TaskStatus = Literal["draft", "teacher_reviewed"]
+StepKind = Literal["fixed", "slots", "flow"]
+# fixed=文章结构的一格，素材按 function 挂上来
+# slots=文章结构的一格，子格由题目的 must/bonus 槽位在运行时展开
+# flow =练习流程动作（选情境、交卷检查），不产出文章内容
 
 
 @dataclass(frozen=True)
@@ -24,6 +28,16 @@ class SourceRef:
     locator: str = ""                    # 页码/行号/时间点，如 "L33_final_working.md:280"
     verify: VerifyState = "needs_review"
     note: str = ""
+
+
+@dataclass(frozen=True)
+class SkeletonStep:
+    """体裁骨架的一格。属于 tcf_task_type，不属于任何一道题。"""
+
+    step_id: str
+    name: str
+    kind: StepKind
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,7 +61,9 @@ class WritingSupport:
     modality: Modality = "writing"
     conditions: str = ""
     source: SourceRef | None = None
-    step: str = ""                       # 组装线步号（"1".."7"）；空串=不参与组装线
+    step: str = ""                       # ⚠️ 过渡字段，J2 卡移除；请改用 function
+    function: str = ""                   # 对应 SkeletonStep.step_id；空串=不进骨架，只进详解
+    slot_id: str = ""                    # 仅当所属格 kind="slots"：这条素材填哪个槽位
 
 
 @dataclass(frozen=True)
@@ -68,6 +84,7 @@ class WritingTask:
     sources: tuple[SourceRef, ...] = ()
     reference_text: str = ""             # 老师核验过的参考全文；空串=暂无
     time_limit_minutes: int = 0          # 0=不限时
+    skeleton: tuple[SkeletonStep, ...] = ()   # 按 tcf_task_type 装配，非本题私有
 
 
 @dataclass(frozen=True)

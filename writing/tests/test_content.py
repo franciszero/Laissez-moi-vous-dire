@@ -92,3 +92,46 @@ def test_step_is_parsed_and_defaults_to_empty(tmp_path):
     by_id = {s.support_id: s for s in t.supports}
     assert by_id["a"].step == "4"
     assert by_id["b"].step == ""
+
+
+def _write_skeletons(root: Path):
+    (root / "writing_skeletons.json").write_text(json.dumps({
+        "schema": 1,
+        "skeletons": {"tache_1": {"name": "TCF Tâche 1", "flow": [
+            {"step_id": "pick_scenario", "name": "选一个情境", "kind": "flow"},
+            {"step_id": "subject", "name": "邮件主题", "kind": "fixed", "optional": True},
+            {"step_id": "slot_fill", "name": "展开必答信息", "kind": "slots"},
+        ]}},
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def test_function_and_slot_id_are_parsed(tmp_path):
+    doc = _doc()
+    doc["tasks"][0]["supports"][1]["function"] = "slot_fill"
+    doc["tasks"][0]["supports"][1]["slot_id"] = "s1"
+    _write(tmp_path, doc)
+    t = JsonWritingContent(tmp_path).load_task("L33", "L33-W1")
+    by_id = {s.support_id: s for s in t.supports}
+    assert by_id["a"].function == "slot_fill" and by_id["a"].slot_id == "s1"
+    assert by_id["b"].function == "" and by_id["b"].slot_id == ""
+
+
+def test_skeleton_is_attached_by_task_type(tmp_path):
+    """骨架按 tcf_task_type 装配——它跨课共用，不住在每课的 writing_tasks.json 里。"""
+    _write(tmp_path, _doc())
+    _write_skeletons(tmp_path)
+    t = JsonWritingContent(tmp_path).load_task("L33", "L33-W1")
+    assert [s.step_id for s in t.skeleton] == ["pick_scenario", "subject", "slot_fill"]
+    assert [s.kind for s in t.skeleton] == ["flow", "fixed", "slots"]
+    assert t.skeleton[1].optional is True
+
+
+def test_missing_skeleton_file_means_empty(tmp_path):
+    _write(tmp_path, _doc())
+    assert JsonWritingContent(tmp_path).load_task("L33", "L33-W1").skeleton == ()
+
+
+def test_unknown_task_type_gets_no_skeleton(tmp_path):
+    _write(tmp_path, _doc(tcf_task_type="tache_3"))
+    _write_skeletons(tmp_path)
+    assert JsonWritingContent(tmp_path).load_task("L33", "L33-W1").skeleton == ()

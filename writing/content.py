@@ -7,6 +7,7 @@ from pathlib import Path
 
 from writing.contracts import (
     ScoreSlot,
+    SkeletonStep,
     SourceRef,
     WritingSupport,
     WritingTask,
@@ -56,10 +57,19 @@ def _parse_support(d: dict) -> WritingSupport:
         title=d["title"], body=d["body"], review=d["review"], order=d["order"],
         modality=d.get("modality", "writing"), conditions=d.get("conditions", ""),
         source=_parse_source(d.get("source")), step=str(d.get("step", "")),
+        function=str(d.get("function", "")), slot_id=str(d.get("slot_id", "")),
     )
 
 
-def _parse_task(d: dict) -> WritingTask:
+def _parse_skeleton_step(d: dict) -> SkeletonStep:
+    _require(d, ("step_id", "name", "kind"), "skeleton step")
+    return SkeletonStep(
+        step_id=d["step_id"], name=d["name"], kind=d["kind"],
+        optional=bool(d.get("optional", False)),
+    )
+
+
+def _parse_task(d: dict, skeleton: tuple[SkeletonStep, ...] = ()) -> WritingTask:
     _require(d, _REQUIRED_TASK_FIELDS, f"task {d.get('task_id', '?')}")
     supports = tuple(sorted((_parse_support(s) for s in d.get("supports", [])),
                             key=lambda s: (s.order, s.support_id)))
@@ -76,6 +86,7 @@ def _parse_task(d: dict) -> WritingTask:
         sources=tuple(s for s in (_parse_source(x) for x in d.get("sources", [])) if s),
         reference_text=d.get("reference_text", ""),
         time_limit_minutes=d.get("time_limit_minutes", 0),
+        skeleton=skeleton,
     )
 
 
@@ -85,12 +96,26 @@ class JsonWritingContent:
     def __init__(self, root: Path) -> None:
         self._root = Path(root)
 
+    def _load_skeletons(self) -> dict[str, tuple[SkeletonStep, ...]]:
+        """体裁骨架属于 tcf_task_type，跨课共用，所以放在内容根而非每课目录下。"""
+        path = self._root / "writing_skeletons.json"
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {
+            k: tuple(_parse_skeleton_step(x) for x in v.get("flow", []))
+            for k, v in data.get("skeletons", {}).items()
+        }
+
     def _load_all(self, lesson: str) -> tuple[WritingTask, ...]:
         path = self._root / lesson / "writing_tasks.json"
         if not path.exists():
             return ()
         data = json.loads(path.read_text(encoding="utf-8"))
-        tasks = tuple(_parse_task(t) for t in data.get("tasks", []))
+        sk = self._load_skeletons()
+        tasks = tuple(
+            _parse_task(t, sk.get(t.get("tcf_task_type", ""), ())) for t in data.get("tasks", [])
+        )
         ids = [t.task_id for t in tasks]
         if len(ids) != len(set(ids)):
             raise ContentError(f"{path} task_id 重复")
