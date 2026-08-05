@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from writing.contracts import ScoreSlot, WritingSupport, WritingTask
+from writing.contracts import ScoreSlot, SkeletonStep, WritingSupport, WritingTask
 from writing.service import WritingService
 from writing.tests.fakes import InMemoryContent, InMemoryHistory
 from writing import ui
@@ -21,11 +21,28 @@ def _task() -> WritingTask:
             WritingSupport("sup1", "task", "outline", "段落骨架",
                            "称呼 → 目的 → 请求 → 结尾", "teacher_reviewed", 1),
             WritingSupport("sup2", "task", "language_ammo", "请求句型",
-                           "Pourrais-tu m'aider à …", "ai_draft", 2, step="5"),
+                           "Pourrais-tu m'aider à …", "ai_draft", 2,
+                           function="objectif_general"),
+            WritingSupport("sup4", "task", "content_ammo", "预算说法",
+                           "Mon budget est de 800 dollars.", "ai_draft", 4,
+                           function="details", slot_id="s1"),
+            WritingSupport("sup5", "task", "outline", "怎么展开",
+                           "Qui ? Quoi ? Quand ?", "teacher_reviewed", 5,
+                           function="details"),
+            WritingSupport("sup6", "task", "language_ammo", "选情境",
+                           "A / B / C", "ai_draft", 6, function="pick_scenario"),
+            WritingSupport("sup7", "task", "language_ammo", "主题行",
+                           "Objet : Recherche…", "teacher_reviewed", 7, function="en_tete"),
             WritingSupport("sup3", "task_type", "teacher_tip", "老师嘱咐",
                            "可以查词组，不要查整句", "teacher_reviewed", 3),
         ),
         reference_text="Salut Marie, je cherche un appartement …",
+        skeleton=(
+            SkeletonStep("pick_scenario", "选一个情境", "flow"),
+            SkeletonStep("objectif_general", "3. Objectif général · 亮明目的", "fixed"),
+            SkeletonStep("details", "4. Détails · 展开细节", "slots"),
+            SkeletonStep("en_tete", "1. En-tête · 邮件头", "fixed", optional=True),
+        ),
     )
 
 

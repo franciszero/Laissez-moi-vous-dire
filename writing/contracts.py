@@ -61,7 +61,6 @@ class WritingSupport:
     modality: Modality = "writing"
     conditions: str = ""
     source: SourceRef | None = None
-    step: str = ""                       # ⚠️ 过渡字段，J2 卡移除；请改用 function
     function: str = ""                   # 对应 SkeletonStep.step_id；空串=不进骨架，只进详解
     slot_id: str = ""                    # 仅当所属格 kind="slots"：这条素材填哪个槽位
 

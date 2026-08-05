@@ -68,6 +68,13 @@ _STYLE = """
     padding: 6px 12px !important;   /* Streamlit 自带 padding 优先级更高，必须 important */
     margin-bottom: 6px;
 }
+[class*="st-key-wr_flow_"] {
+    background: transparent;
+    border: 1px dashed rgba(49, 51, 63, .25);
+    border-radius: 8px;
+    padding: 6px 12px !important;
+    margin-bottom: 6px;
+}
 [class*="st-key-wr_legend"] p {
     font-size: .85em;               /* 视觉上等同 caption，但不带 caption 的 opacity:.6
                                        —— 那个 opacity 会把 10% 的底色乘成 6%，等于没有 */
@@ -82,10 +89,6 @@ _LEGEND = (
     ":red-background[红底]:gray[＝转录重构·核了再抄]　"
     ":gray[⭕必答 ➕加分 ⚠️风险]"
 )
-# T1 骨架七步；将来 T2/T3 有别的骨架时应移入内容层，不要在这里堆
-_STEP_NAME = {"0": "选一个情境", "1": "Objet 主题行", "2": "称呼", "3": "背景（为什么去）",
-              "4": "提出求助", "5": "房型", "6": "地点与条件", "7": "预算",
-              "8": "日期与租期", "9": "收尾（行动 + 感谢）"}
 _RIGHT_PANEL_HEIGHT = 620   # px；与左栏「正文框 + 字数 + 按钮」大致齐平，资料区在框内滚动
 _SLOT_ICON = {"must": "⭕", "bonus": "➕", "risk": "⚠️"}
 _REVIEW_BADGE = {"teacher_reviewed": "老师核验", "ai_draft": "AI 起草", "needs_review": "待核对"}
@@ -162,20 +165,49 @@ def _render_ammo(task: WritingTask) -> None:
             with st.expander("📄 参考全文（展开即照抄模式）", expanded=False):
                 st.markdown(task.reference_text)
         return
-    line = [s for s in task.supports if s.step]
-    if not line:
-        st.caption("这道题还没标注组装步骤，请切到「详解」。")
+    if not task.skeleton:
+        st.caption("这道题所属的体裁还没有配置骨架，请切到「详解」。")
         return
-    for step in sorted({s.step for s in line}):
-        items = sorted((s for s in line if s.step == step),
-                       key=lambda s: (s.order, s.support_id))
-        name = _STEP_NAME.get(step, "")
-        head = f"**步 {step}" + (f" · {name}**" if name else "**")
-        with st.container(key=f"wr_step_{step}"):   # 一步一个块，样式见 _STYLE
-            buf = [f"{head}　:gray[{len(items)} 条]", ""]
-            for sup in items:
-                buf += [_support_line(sup), ""]
+    by_fn: dict[str, list] = {}
+    for sup in task.supports:
+        if sup.function:
+            by_fn.setdefault(sup.function, []).append(sup)
+    if not by_fn:
+        st.caption("这道题的弹药还没标 function，请切到「详解」。")
+        return
+    slot_of = {sl.slot_id: sl for sl in task.slots}
+    for step in task.skeleton:
+        items = sorted(by_fn.get(step.step_id, []), key=lambda s: (s.order, s.support_id))
+        if not items:
+            continue
+        prefix = "wr_flow_" if step.kind == "flow" else "wr_step_"
+        with st.container(key=f"{prefix}{step.step_id}"):
+            opt = "　:gray[（题目没要求就不写）]" if step.optional else ""
+            buf = [f"**{step.name}**　:gray[{len(items)} 条]{opt}", ""]
+            if step.kind == "slots":
+                buf += _slot_groups(items, task, slot_of)
+            else:
+                for sup in items:
+                    buf += [_support_line(sup), ""]
             st.markdown("\n".join(buf))
+
+
+def _slot_groups(items, task: WritingTask, slot_of: dict) -> list[str]:
+    """slots 格：先通用素材，再按【题目 slots 的原始顺序】分组——
+    不能用 sorted(slot_id)，那会把 s14 排到 s1 和 s2 之间。"""
+    buf: list[str] = []
+    for sup in [x for x in items if not x.slot_id]:
+        buf += [_support_line(sup), ""]
+    present = {x.slot_id for x in items if x.slot_id}
+    for sl in task.slots:
+        if sl.slot_id not in present:
+            continue
+        icon = _SLOT_ICON.get(sl.kind, "•")
+        group = [x for x in items if x.slot_id == sl.slot_id]
+        buf += [f"{icon} **{sl.label}**　:gray[{len(group)} 条]", ""]
+        for sup in group:
+            buf += [_support_line(sup), ""]
+    return buf
 
 
 def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:

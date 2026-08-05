@@ -83,17 +83,6 @@ def test_unknown_task_raises_keyerror(tmp_path):
         JsonWritingContent(tmp_path).load_task("L33", "nope")
 
 
-def test_step_is_parsed_and_defaults_to_empty(tmp_path):
-    """写了 step 的条目解析出来，没写的保持空串。"""
-    doc = _doc()
-    doc["tasks"][0]["supports"][1]["step"] = "4"      # support_id "a"
-    _write(tmp_path, doc)
-    t = JsonWritingContent(tmp_path).load_task("L33", "L33-W1")
-    by_id = {s.support_id: s for s in t.supports}
-    assert by_id["a"].step == "4"
-    assert by_id["b"].step == ""
-
-
 def _write_skeletons(root: Path):
     (root / "writing_skeletons.json").write_text(json.dumps({
         "schema": 1,

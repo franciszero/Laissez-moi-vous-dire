@@ -127,8 +127,9 @@ def test_assembly_line_groups_by_step():
     """组装线按 step 分组，标出步号与步名。"""
     at = _app()
     joined = " ".join(m.value for m in at.markdown)
-    assert "步 5" in joined and "房型" in joined, "缺少步号分组标题"
-    assert "请求句型" in joined, "带 step 的弹药应出现在组装线里"
+    assert "3. Objectif général" in joined, "组装线应按骨架段名分组，而不是步号"
+    assert "请求句型" in joined, "带 function 的弹药应出现在对应格里"
+    assert "（题目没要求就不写）" in joined, "optional 的格应标出可选"
 
 
 def test_detail_view_restores_expanders():
@@ -151,8 +152,9 @@ def test_skeleton_tab_is_flat():
 def test_assembly_step_is_boxed_and_counted():
     """每步一个边框容器（范围可见）+ 步头带条数（未读先知量）。"""
     src = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
-    assert 'st.container(key=f"wr_step_{step}")' in src, "每步应有独立 key 供 CSS 挂载"
-    assert '[class*="st-key-wr_step_"]' in src, "样式表应通过 st-key-* 定义步块样式"
+    assert 'f"{prefix}{step.step_id}"' in src, "每格应按 step_id 给 key 供 CSS 挂载"
+    assert '[class*="st-key-wr_step_"]' in src, "文章格样式挂 st-key-wr_step_*"
+    assert '[class*="st-key-wr_flow_"]' in src, "流程格样式挂 st-key-wr_flow_*（虚线，非文章结构）"
     at = _app()
     joined = " ".join(m.value for m in at.markdown)
     assert "1 条" in joined, "步头应显示该步条数"
@@ -186,3 +188,30 @@ def test_stylesheet_hooks_only_supported_classes():
     assert "st-key-" in css, "样式必须挂在 st-key-* 上"
     assert "st-emotion-cache" not in css, "禁止依赖 Streamlit 编译产物类名做样式挂载"
     assert "data-testid" not in css, "禁止依赖 Streamlit 内部 testid 做样式挂载"
+
+
+def test_slot_step_expands_in_task_slot_order():
+    """slots 格按【题目 slots 的原始顺序】展开，不能 sorted(slot_id)——
+    那会把 s14 排到 s1 和 s2 之间。"""
+    src = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
+    assert "for sl in task.slots:" in src, "应遍历 task.slots 保序，而不是对 slot_id 排序"
+    at = _app()
+    joined = " ".join(m.value for m in at.markdown)
+    assert "4. Détails" in joined and "budget" in joined, "slots 格应展开出题目的槽位"
+    assert "怎么展开" in joined, "无 slot_id 的通用素材应排在分组之前"
+
+
+def test_flow_steps_are_visually_separate_from_article_steps():
+    """选情境/交卷检查是练习流程，不是文章的一格——挂不同的 CSS 前缀。"""
+    src = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
+    assert '"wr_flow_" if step.kind == "flow" else "wr_step_"' in src, \
+        "flow 与 fixed/slots 必须挂不同前缀"
+
+
+def test_step_field_is_gone():
+    """step 曾经把三个抽象层压成一个字符串，本卡移除。"""
+    from writing.contracts import WritingSupport
+    assert not hasattr(WritingSupport("x", "task", "logic", "T", "B", "ai_draft", 1), "step"), \
+        "WritingSupport.step 应已移除，改用 function"
+    ui = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
+    assert "_STEP_NAME" not in ui, "步名应由内容层的骨架提供，不再硬编码在 UI 里"
