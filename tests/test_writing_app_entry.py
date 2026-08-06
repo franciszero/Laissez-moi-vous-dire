@@ -88,6 +88,9 @@ def test_app_renders_writing_view_when_flag_preseeded(tmp_path, monkeypatch):
     try:
         at = AppTest.from_file("app.py", default_timeout=10)
         at.session_state["writing_active"] = True
+        # 课程要和 writing_active 一样显式预置：默认课来自 DB 的 setting:last_lesson，
+        # 用户在真实 8501 里选过别的课（或新课没有写作任务）时，这里不能靠它凑巧是 L33。
+        at.session_state["sel_lesson"] = "L33"
         at.run()
         assert not at.exception
         assert at.text_area(key="wr_text_L33-W1") is not None
