@@ -376,3 +376,38 @@ class StoreWritingHistory:
 
     def list_versions(self, task_id: str):
         return list_writing_versions(task_id)
+
+
+# ---- 预约制作单词卡 ------------------------------------------------------
+# 系统词典（macdict）给出的释义太简单时，学习者点一下「预约制作单词卡」，
+# 表示这条要一张高质量 Anki 卡。这里只记录意愿，不生成卡片。
+# 按 lemma 存而不是 word_id：lemma 是 words.text、vocab.json 和 Anki 笔记三处
+# 共用的关联键，生成卡片时用的也是它。
+
+def set_card_requested(lemma: str, requested: bool) -> None:
+    conn = get_conn()
+    conn.execute(
+        "UPDATE words SET card_requested = ? WHERE text = ?",
+        (1 if requested else 0, lemma),
+    )
+    conn.commit()
+    conn.close()
+
+
+def is_card_requested(lemma: str) -> bool:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT card_requested FROM words WHERE text = ?", (lemma,)
+    ).fetchone()
+    conn.close()
+    return bool(row and row[0])
+
+
+def get_card_requested_words() -> list[dict]:
+    """已预约制卡的词，供侧栏查看和课后统一生成。"""
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, text FROM words WHERE card_requested = 1 ORDER BY text"
+    ).fetchall()
+    conn.close()
+    return [{"id": r[0], "text": r[1]} for r in rows]

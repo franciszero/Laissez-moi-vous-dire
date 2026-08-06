@@ -41,6 +41,9 @@ from store import (
     get_checkpoint_attempts,
     save_ai_attempt,
     get_ai_attempts,
+    set_card_requested,
+    is_card_requested,
+    get_card_requested_words,
 )
 
 ZH_VOICE = "Tingting"  # macOS 中文嗓音（听/看中文模式用）
@@ -389,6 +392,7 @@ def render_learn_panel(lemma: str) -> None:
     definition = macdict_cached(lemma)
     if definition:
         st.markdown(f"**词典（macOS）**：{definition}")
+    render_card_request_button(lemma, "learn")
 
 
 # =========================
@@ -598,6 +602,13 @@ def init_db() -> None:
     except sqlite3.OperationalError:
         pass
 
+    # 迁移：给 words 加 card_requested 列（预约制作单词卡：系统词典释义不够用，
+    # 想要一张高质量 Anki 卡。只记录意愿，不在这里生成——生成走 anki-wordsmith）
+    try:
+        cur.execute("ALTER TABLE words ADD COLUMN card_requested INTEGER NOT NULL DEFAULT 0")
+    except sqlite3.OperationalError:
+        pass
+
     # 知识点 checkpoint 卡的 SRS 状态（内容在 manifest，状态按 card_id 存这）
     cur.execute("""
     CREATE TABLE IF NOT EXISTS checkpoints (
@@ -677,6 +688,20 @@ def set_word_hidden(word_id: int, hidden: bool) -> None:
     conn.execute("UPDATE words SET hidden = ? WHERE id = ?", (1 if hidden else 0, word_id))
     conn.commit()
     conn.close()
+
+
+def render_card_request_button(lemma: str, key_suffix: str = "") -> None:
+    """挂在 OS 词典释义下方：表示「这条解释不够，我要一张正经的卡」。"""
+    if is_card_requested(lemma):
+        st.caption("📌 已预约制作单词卡")
+        if st.button("取消预约", key=f"unreq_{key_suffix}_{lemma}"):
+            set_card_requested(lemma, False)
+            st.rerun()
+        return
+    if st.button("📌 预约制作单词卡", key=f"req_{key_suffix}_{lemma}",
+                 help="系统词典的释义太简单时点这里；课后统一生成高质量 Anki 卡。"):
+        set_card_requested(lemma, True)
+        st.rerun()
 
 
 def _hidden_id_set() -> set:
@@ -1292,6 +1317,18 @@ with st.sidebar:
         load_conjugations.clear()
         st.session_state.pop("_anki_ok_cache", None)  # 重生成过的 Anki 卡也强制刷新
         st.rerun()
+
+    requested_rows = get_card_requested_words()
+    with st.expander(f"📌 已预约制卡（{len(requested_rows)}）"):
+        if not requested_rows:
+            st.caption("背词时觉得系统词典释义不够用，点「📌 预约制作单词卡」，"
+                       "词会攒在这里，课后统一生成高质量 Anki 卡。")
+        for r in requested_rows:
+            rc1, rc2 = st.columns([3, 1])
+            rc1.write(f"{r['text']} — {VOCAB.get(r['text'], {}).get('zh', '')}")
+            if rc2.button("取消", key=f"unreq_side_{r['id']}"):
+                set_card_requested(r["text"], False)
+                st.rerun()
 
     hidden_rows = get_hidden_words()
     with st.expander(f"🙈 已隐藏的词（{len(hidden_rows)}）"):
@@ -2115,6 +2152,7 @@ def render_card_view(lemma: str) -> None:
             st.markdown(f"**词典（macOS）**：{definition}")
         elif state["status"] == "missing":
             st.info("这个词还没有 Anki 卡，也没查到法语词典释义。")
+        render_card_request_button(lemma, "cardview")
 
 
 def render_checkpoint() -> None:
