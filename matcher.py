@@ -29,10 +29,18 @@ def check_fr(answer: str, target: str) -> bool:
 # 占位符 / 省略号（"……" 要在 "…" 前面，先吃成对的）
 _PLACEHOLDERS = ["……", "…", "...", "。。。", "某人", "某事", "某物", "某地", "某", "XX", "xx", "××", "_"]
 _SEP = re.compile(r"[，,、;；/／]")
-_SOURCE_PREFIX = re.compile(
-    r"^\s*\[(?:T\d+Q\d+(?:/Q\d+)*(?:\s*[;；]\s*T\d+Q\d+(?:/Q\d+)*)*|L\d+课前复习)(?:\s*补)?\]\s*"
+# 中文义前面的来源标签。原先只认 [T4Q12] 和 [L30课前复习] 两种，后来又加了
+# [L34课外题]、[L34写作T1/T2]，它们剥不掉就会留在核心义里，判分退化成人工自判。
+# 这里按「课级标签」统一收口：L<数字> 开头的任意短标签都算来源，不再逐个枚举。
+# 允许连着写多个标签（如 [L34课前复习][T8Q16]）——一个词有两个来源是正常的。
+_ONE_SOURCE_TAG = (
+    r"\[(?:T\d+Q\d+(?:/Q\d+)*(?:\s*[;；]\s*T\d+Q\d+(?:/Q\d+)*)*"
+    r"|L\d+[^\]\s]{0,12})(?:\s*补)?\]"
 )
-_CODEX_NOTE_SUFFIX = re.compile(r"\s*\[Codex\s*建议\s*[:：][^\]]*\]\s*$", re.IGNORECASE)
+_SOURCE_PREFIX = re.compile(rf"^\s*(?:{_ONE_SOURCE_TAG}\s*)+")
+# 选词理由后缀。原先把署名写死成 Codex，换成 Opus5 之后 46 条 L34 词条的
+# 后缀剥不掉。署名会随执行的模型变，所以不锁定具体名字。
+_AGENT_NOTE_SUFFIX = re.compile(r"\s*\[[^\]]{0,20}建议\s*[:：][^\]]*\]\s*$")
 
 
 def _norm_zh(t: str) -> str:
@@ -53,7 +61,7 @@ def _skeleton(t: str) -> str:
 def _core_zh_gloss(gloss: str) -> str:
     """去掉学习来源和选词理由；这些内容保留显示，但不参与中文判分。"""
     core = _SOURCE_PREFIX.sub("", gloss or "")
-    return _CODEX_NOTE_SUFFIX.sub("", core).strip()
+    return _AGENT_NOTE_SUFFIX.sub("", core).strip()
 
 
 def check_zh(answer: str, gloss: str):
