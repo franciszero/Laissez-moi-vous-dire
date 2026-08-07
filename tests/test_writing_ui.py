@@ -215,3 +215,38 @@ def test_step_field_is_gone():
         "WritingSupport.step 应已移除，改用 function"
     ui = (Path(__file__).parents[1] / "writing" / "ui.py").read_text(encoding="utf-8")
     assert "_STEP_NAME" not in ui, "步名应由内容层的骨架提供，不再硬编码在 UI 里"
+
+
+def test_extended_support_gets_a_popover_entry_in_both_views():
+    """带 extended 的素材挂一个「展开阅读」浮层；正文不因此变长。"""
+    at = _app()
+    at.segmented_control(key="wr_ammo_view").set_value("🔧 组装线").run()
+    assert not at.exception
+
+    pops = [p for p in at.get("popover") if "展开阅读" in p.proto.popover.label]
+    assert pops, "组装线视图应给 sup4 挂浮层入口"
+    assert pops[0].proto.popover.label == "＋ 展开阅读：预算说法", "按钮上只留正题"
+    assert any("| 档位 |" in m.value for m in pops[0].markdown), "extended 应渲染在浮层内部"
+
+    # 常驻正文里不该出现 extended 的内容标题以外的东西被提前展开——
+    # extended 只在 popover 容器内，正文块仍只有 body。
+    body_blocks = [m.value for m in at.markdown if "Mon budget est de 800 dollars." in m.value]
+    assert body_blocks, "正文仍应有 body"
+    assert all("| 档位 |" not in b for b in body_blocks), "extended 不应混进正文块"
+
+    at.segmented_control(key="wr_ammo_view").set_value("📖 详解").run()
+    assert not at.exception
+    assert any("展开阅读" in p.proto.popover.label for p in at.get("popover")), \
+        "详解视图也应有入口"
+
+
+def test_supports_without_extended_stay_in_one_markdown_block():
+    """没有 extended 的连续素材必须仍然合并成一个 markdown 块——
+    拆块会在每条之间塞进 16px 间距，密度就毁了。"""
+    at = _app()
+    at.segmented_control(key="wr_ammo_view").set_value("🔧 组装线").run()
+    assert not at.exception
+    # sup2 与它所在 step 的标题同块（该 step 内没有带 extended 的条目）
+    merged = [m.value for m in at.markdown if "Pourrais-tu m'aider" in m.value]
+    assert merged, "找不到 sup2"
+    assert "Objectif général" in merged[0], "step 标题应与素材同块"

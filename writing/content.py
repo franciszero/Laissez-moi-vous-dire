@@ -58,6 +58,7 @@ def _parse_support(d: dict) -> WritingSupport:
         modality=d.get("modality", "writing"), conditions=d.get("conditions", ""),
         source=_parse_source(d.get("source")),
         function=str(d.get("function", "")), slot_id=str(d.get("slot_id", "")),
+        extended=str(d.get("extended", "")),
     )
 
 

@@ -104,6 +104,44 @@ def _support_line(sup, with_evidence: bool = False) -> str:
     return out
 
 
+def _short_title(title: str) -> str:
+    """去掉标题里的 :gray[…] 后缀，浮层按钮上只留正题。"""
+    return title.split(":gray[")[0].strip("　 ")
+
+
+def _extended_popover(sup) -> None:
+    """展开阅读：写作时用不上、吸收时才看的次要内容。
+
+    点开的浮层不占常驻篇幅——正文那几行仍然一眼可扫。用 st.popover 而不是
+    CSS hover：hover 富文本只能塞进 components.html 的 iframe，而浮层会被
+    iframe 高度裁掉（实测 187px 的面板在 40px 的 iframe 里只露 8px）。
+    """
+    with st.popover(f"＋ 展开阅读：{_short_title(sup.title)}"):
+        st.markdown(sup.extended)
+
+
+class _SupportStream:
+    """按顺序吐 support：连续的若干条合并成一次 st.markdown（块间距只有一份），
+    遇到带 extended 的就先冲刷、再挂浮层入口。没有 extended 时输出与从前一致。"""
+
+    def __init__(self, *lines: str) -> None:
+        self._buf: list[str] = list(lines)
+
+    def add(self, *lines: str) -> None:
+        self._buf.extend(lines)
+
+    def flush(self) -> None:
+        if self._buf:
+            st.markdown("\n".join(self._buf))
+            self._buf = []
+
+    def support(self, sup) -> None:
+        self.add(_support_line(sup), "")
+        if sup.extended:
+            self.flush()
+            _extended_popover(sup)
+
+
 def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
     sups = [s for s in task.supports if s.category in categories]
     if not sups:
@@ -112,6 +150,8 @@ def _render_supports(task: WritingTask, categories: tuple[str, ...]) -> None:
     for sup in sups:
         with st.expander(sup.title, expanded=False):
             st.markdown(_support_line(sup, with_evidence=True))
+            if sup.extended:
+                _extended_popover(sup)
 
 
 def _render_breakdown(task: WritingTask) -> None:
@@ -147,10 +187,10 @@ def _render_flat(task: WritingTask, categories: tuple[str, ...]) -> None:
     if not sups:
         st.caption("（暂无内容）")
         return
-    buf = []
+    stream = _SupportStream()
     for sup in sups:
-        buf += [_support_line(sup), ""]
-    st.markdown("\n".join(buf))
+        stream.support(sup)
+    stream.flush()
 
 
 def _render_ammo(task: WritingTask) -> None:
@@ -175,7 +215,6 @@ def _render_ammo(task: WritingTask) -> None:
     if not by_fn:
         st.caption("这道题的弹药还没标 function，请切到「详解」。")
         return
-    slot_of = {sl.slot_id: sl for sl in task.slots}
     for step in task.skeleton:
         items = sorted(by_fn.get(step.step_id, []), key=lambda s: (s.order, s.support_id))
         if not items:
@@ -183,31 +222,29 @@ def _render_ammo(task: WritingTask) -> None:
         prefix = "wr_flow_" if step.kind == "flow" else "wr_step_"
         with st.container(key=f"{prefix}{step.step_id}"):
             opt = "　:gray[（题目没要求就不写）]" if step.optional else ""
-            buf = [f"**{step.name}**　:gray[{len(items)} 条]{opt}", ""]
+            stream = _SupportStream(f"**{step.name}**　:gray[{len(items)} 条]{opt}", "")
             if step.kind == "slots":
-                buf += _slot_groups(items, task, slot_of)
+                _emit_slot_groups(stream, items, task)
             else:
                 for sup in items:
-                    buf += [_support_line(sup), ""]
-            st.markdown("\n".join(buf))
+                    stream.support(sup)
+            stream.flush()
 
 
-def _slot_groups(items, task: WritingTask, slot_of: dict) -> list[str]:
+def _emit_slot_groups(stream: "_SupportStream", items, task: WritingTask) -> None:
     """slots 格：先通用素材，再按【题目 slots 的原始顺序】分组——
     不能用 sorted(slot_id)，那会把 s14 排到 s1 和 s2 之间。"""
-    buf: list[str] = []
     for sup in [x for x in items if not x.slot_id]:
-        buf += [_support_line(sup), ""]
+        stream.support(sup)
     present = {x.slot_id for x in items if x.slot_id}
     for sl in task.slots:
         if sl.slot_id not in present:
             continue
         icon = _SLOT_ICON.get(sl.kind, "•")
         group = [x for x in items if x.slot_id == sl.slot_id]
-        buf += [f"{icon} **{sl.label}**　:gray[{len(group)} 条]", ""]
+        stream.add(f"{icon} **{sl.label}**　:gray[{len(group)} 条]", "")
         for sup in group:
-            buf += [_support_line(sup), ""]
-    return buf
+            stream.support(sup)
 
 
 def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:

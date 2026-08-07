@@ -63,6 +63,7 @@ class WritingSupport:
     source: SourceRef | None = None
     function: str = ""                   # 对应 SkeletonStep.step_id；空串=不进骨架，只进详解
     slot_id: str = ""                    # 仅当所属格 kind="slots"：这条素材填哪个槽位
+    extended: str = ""                   # 展开阅读：写作时不看、吸收时才看的次要内容。空串=不给入口
 
 
 @dataclass(frozen=True)
