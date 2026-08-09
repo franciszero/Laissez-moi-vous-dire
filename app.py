@@ -1520,6 +1520,31 @@ def render_speak(word) -> None:
             st.rerun()
 
 
+def _round_mark(value) -> str:
+    """本轮结果 → 词表里词前面的标记。
+
+    value 可能是 bool（单技能模式）或 {"fr": bool, "zh": bool}（法+中模式）。
+    法+中不再 AND 成一个对错：两项是分开记录、分开算掌握度的技能，法语拼错
+    不该把中文答对一起抹掉，否则「中文算我对」点了也看不出效果。
+    """
+    if isinstance(value, dict):
+        return "".join("✅" if value.get(k) else "❌" for k in ("fr", "zh") if k in value) + " "
+    return "✅ " if value is True else "❌ " if value is False else ""
+
+
+def _round_tally(results) -> str:
+    """本轮统计。法+中模式按字段分别计数，不混成一个数。"""
+    flat = [v for v in results.values() if not isinstance(v, dict)]
+    line = ""
+    if flat:
+        line = f"对 {sum(1 for v in flat if v)} / 错 {sum(1 for v in flat if not v)}"
+    for key, label in (("fr", "法语"), ("zh", "中文")):
+        col = [v[key] for v in results.values() if isinstance(v, dict) and key in v]
+        if col:
+            line += f"{' · ' if line else ''}{label} 对 {sum(1 for v in col if v)} / 错 {sum(1 for v in col if not v)}"
+    return line or "对 0 / 错 0"
+
+
 def _finalize(word, fr_ans, zh_ans, fr_ok, zh_ok) -> None:
     """落定一次作答（按模式合并字段），写反馈与本轮对错。"""
     zh_gloss = word_zh(word["text"])
@@ -1537,7 +1562,10 @@ def _finalize(word, fr_ans, zh_ans, fr_ok, zh_ok) -> None:
         record_attempt(word["id"], (zh_ans or "").strip() or "（空）", bool(zh_ok), "meaning")
     else:
         record_attempt(word["id"], combined, correct, SKILL)
-    st.session_state.round_results[word["id"]] = correct
+    if SKILL == "both":
+        st.session_state.round_results[word["id"]] = {"fr": bool(fr_ok), "zh": bool(zh_ok)}
+    else:
+        st.session_state.round_results[word["id"]] = correct
     st.session_state.pending = None
     st.session_state.graded = True
     answer_text = f"{word['text']} — {zh_gloss}"
@@ -1602,7 +1630,7 @@ def render_practice() -> None:
         st.success("✅ 歇一下～")
         st.write(
             f"{st.session_state.round_label} · 已做 {done}/{total} 词 · "
-            f"对 {sum(1 for v in res.values() if v)} / 错 {sum(1 for v in res.values() if not v)}"
+            f"{_round_tally(res)}"
         )
         rc1, rc2 = st.columns(2)
         if rc1.button("继续 ▶", type="primary"):
@@ -1618,7 +1646,7 @@ def render_practice() -> None:
             st.success("🎉 这一轮全部做完啦！")
             st.write(
                 f"{st.session_state.round_label} · 共 {total} 词，"
-                f"已作答 {len(res)}，答对 {sum(1 for v in res.values() if v)}。"
+                f"已作答 {len(res)} —— {_round_tally(res)}。"
             )
             st.divider()
             lesson = st.session_state.get("round_lesson", "全部")
@@ -1713,7 +1741,7 @@ def render_practice() -> None:
                     st.rerun()
         elif st.session_state.pending:
             p = st.session_state.pending
-            st.warning("中文拿不准，对照一下你判：")
+            st.warning("中文拿不准，你判一下。法语已按拼写自动判定，不受这两个按钮影响。")
             j_rows = []
             if "fr" in ANSWER_FIELDS:
                 j_rows.append(
@@ -1722,14 +1750,14 @@ def render_practice() -> None:
             j_rows.append(("中文", (p["zh_ans"] or "").strip() or "（空）", zh_gloss, None))
             render_answer_table(j_rows)
             jc1, jc2 = st.columns(2)
-            if jc1.button("✅ 算我对", type="primary"):
+            if jc1.button("✅ 中文算我对", type="primary"):
                 _finalize(current_word, p["fr_ans"], p["zh_ans"], p["fr_ok"], True)
                 if auto_next:
                     st.success(st.session_state.feedback["message"])
                     time.sleep(0.6)
                     next_word()
                 st.rerun()
-            if jc2.button("❌ 算我错"):
+            if jc2.button("❌ 中文算我错"):
                 _finalize(current_word, p["fr_ans"], p["zh_ans"], p["fr_ok"], False)
                 st.rerun()
         else:
@@ -1854,7 +1882,7 @@ def render_word_panel():
     st.markdown("**📋 词表**")
     st.caption(
         "听=听写(听法语写法语)、产=产出(看/听中文写法语)、义=理解(听法语写中文)、音=发音、变=阴阳性变形，"
-        "各列按掌握度上色（灰→黄→绿）；「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果；"
+        "各列按掌握度上色（灰→黄→绿）；「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果（法+中模式是两个标记，前法后中）；"
         "🙈+灰行=已隐藏（不进练习）。点任一词 → 主区可「隐藏 / 恢复」。"
     )
     show_trans = st.checkbox("显示翻译", value=False, key="show_trans")
@@ -1881,7 +1909,7 @@ def render_word_panel():
         if r["id"] in hidden_ids:
             return f"🙈 {r['text']}"
         here = "▶ " if r["id"] == cur_id else ""
-        icon = "✅ " if res.get(r["id"]) is True else "❌ " if res.get(r["id"]) is False else ""
+        icon = _round_mark(res.get(r["id"]))
         return f"{here}{icon}{r['text']}"
 
     df = pd.DataFrame(
