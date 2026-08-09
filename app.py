@@ -339,10 +339,33 @@ def word_provenance(lemma: str) -> list[tuple[str, dict]]:
     ]
 
 
-def render_vocab_provenance(lemma: str) -> None:
+_LEMMA_ARTICLE = re.compile(r"^(le |la |les |un |une |des |du |l['’]|se |s['’])", re.I)
+
+
+def _answer_secrets(lemma: str, targets: tuple) -> list[str]:
+    """这一轮要学习者自己产出的字串。
+
+    「为什么收录这个词」在答题前就展开，而入库理由里常常原样写着目标词
+    （老师在 à court terme 旁边红笔补写 à long terme…），照着敲就得分，
+    听写就白做了。所以出题时先把这些字串挡掉，揭示答案后再放出来。
+    """
+    entry = VOCAB.get(lemma) or {}
+    out: list[str] = []
+    if {"fr", "speak_fr"} & set(targets):
+        out += [lemma, _LEMMA_ARTICLE.sub("", lemma).strip()]
+    if "zh" in targets:
+        out += matcher.zh_senses(word_zh(lemma))
+    if "fem" in targets and entry.get("fem"):
+        out.append(entry["fem"])
+    return [s for s in dict.fromkeys(out) if len(s) >= 3]
+
+
+def render_vocab_provenance(lemma: str, secrets: list[str] | None = None) -> None:
+    """secrets 非空时把这些字串遮成 ▢▢▢（出题中）；None=开卷，原样显示。"""
     records = word_provenance(lemma)
     if not records:
         return
+    hide = (lambda t: matcher.redact(t, secrets)) if secrets else (lambda t: t)
     with st.expander("📚 为什么收录这个词", expanded=True):
         for index, (lesson, item) in enumerate(records):
             if index:
@@ -351,7 +374,7 @@ def render_vocab_provenance(lemma: str) -> None:
             if st.session_state.get("round_lesson") == "全部" and not source.startswith(lesson):
                 source = f"{lesson} · {source}"
             st.markdown(f"**来源**：{source}")
-            st.markdown(f"**入库理由**：{item['selection_reason']}")
+            st.markdown(f"**入库理由**：{hide(item['selection_reason'])}")
             action = _PROVENANCE_ACTION_LABELS.get(
                 item["teacher_action"],
                 item["teacher_action"],
@@ -366,7 +389,7 @@ def render_vocab_provenance(lemma: str) -> None:
                 evidence_text = f"{position} · {evidence_text}"
             st.markdown(f"**课堂证据**：{evidence_text}")
             if item.get("learning_note"):
-                st.caption(f"学习提示：{item['learning_note']}")
+                st.caption(f"学习提示：{hide(item['learning_note'])}")
 
 
 def render_learn_panel(lemma: str) -> None:
@@ -1622,7 +1645,9 @@ def render_practice() -> None:
             f"{st.session_state.round_label} · {mode_name} · "
             f"每 {st.session_state.batch_size_round} 个歇一下 · 还剩 {total - current_no} 词"
         )
-        render_vocab_provenance(current_word["text"])
+        # 位置占在这里（答题框上方），但内容等下面的答案逻辑跑完再填——「显示答案」
+        # 按钮在本函数后半段才被处理，此刻还不知道这一轮到底揭没揭示。
+        provenance_slot = st.container()
 
         zh_gloss = word_zh(current_word["text"])
 
@@ -1796,6 +1821,14 @@ def render_practice() -> None:
             # 词义面板（中文+Anki卡/词典）在下方
             if st.session_state.show_answer or st.session_state.feedback:
                 render_learn_panel(current_word["text"])
+
+        with provenance_slot:   # 回填上方那块「为什么收录这个词」
+            revealed = st.session_state.show_answer or st.session_state.feedback
+            render_vocab_provenance(
+                current_word["text"],
+                None if revealed
+                else _answer_secrets(current_word["text"], MODES[mode_name][1]),
+            )
 
         if st.button("🙈 这个词不用背（隐藏，不再出现）"):
             set_word_hidden(current_word["id"], True)

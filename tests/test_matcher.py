@@ -108,3 +108,47 @@ def test_every_real_vocab_gloss_strips_clean():
         f"{len(bad)} 行剥完标签仍有中括号残留，自动判分会失效。"
         f"要么把新标签加进 matcher 的 _SOURCE_PREFIX，要么改 zh 的写法。前 5 行：{bad[:5]}"
     )
+
+
+# ---------- 出题时遮答案 ----------
+
+def test_redact_hides_the_target_but_keeps_the_contrast_word():
+    """真实案例：à long terme 的入库理由里原样写着答案，照着敲就得分。
+    遮住答案，但配对词 à court terme 必须留着——那是这条理由的教学价值。"""
+    from matcher import redact
+    t = "老师在 à court terme 旁边红笔补写 à long terme，成对给出"
+    out = redact(t, ["à long terme", "long terme"])
+    assert "à long terme" not in out
+    assert "à court terme" in out, "配对词不是答案，不该遮"
+    assert "▢▢▢" in out
+
+
+def test_redact_matches_chinese_without_word_boundary():
+    """汉字本身算 \\w，加前界守卫会让「就长期的」里的「长期的」永远匹配不上。"""
+    from matcher import redact
+    assert "长期的" not in redact("原话“就长期的，可以放到一起记”", ["长期的"])
+
+
+def test_redact_needs_a_left_boundary_for_latin_words():
+    """拉丁词必须卡前界，否则短词会打碎无关的长单词。"""
+    from matcher import redact
+    assert redact("dans un an", ["ans"]) == "dans un an"      # ans 不在 dans 里被切
+    assert "▢▢▢" in redact("des services publics", ["service"])  # 但复数要挡住
+
+
+def test_redact_replaces_longest_secret_first():
+    """先替短词会把长短语切碎，长的就再也匹配不到了。"""
+    from matcher import redact
+    out = redact("il faut voir à long terme", ["terme", "à long terme"])
+    assert out.count("▢▢▢") == 1, f"应该整体遮成一处，实际：{out}"
+
+
+def test_redact_ignores_too_short_secrets():
+    from matcher import redact
+    assert redact("un an de plus", ["an"]) == "un an de plus"
+
+
+def test_redact_is_a_noop_without_secrets():
+    from matcher import redact
+    assert redact("原文照常显示", []) == "原文照常显示"
+    assert redact("", ["x"]) == ""

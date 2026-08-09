@@ -51,6 +51,40 @@ def _senses(gloss: str) -> list[str]:
     return [s for s in (_norm_zh(x) for x in _SEP.split(gloss or "")) if s]
 
 
+def zh_senses(gloss: str) -> list[str]:
+    """中文义里的各个义项（已去掉来源标签和建议后缀）。
+
+    判分用不到这个公开入口——它是给 UI 遮答案用的：出题时要把这些字串从
+    「为什么收录这个词」里挡掉，否则理由文字本身就把答案写出来了。
+    """
+    return _senses(_core_zh_gloss(gloss))
+
+
+_MASK = "▢▢▢"
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def redact(text: str, secrets) -> str:
+    """把 secrets 里的字串遮成 ▢▢▢。
+
+    用途是出题时挡住「为什么收录这个词」里的答案原文——那段文字在答题前
+    就展开，而入库理由常常原样写着目标词（老师在 à court terme 旁边红笔
+    补写 à long terme…），照着敲就得分，听写白做。揭示答案后调用方不传
+    secrets，原文照常显示。
+    """
+    if not text:
+        return text
+    # 长的先替，否则短词会把长短语切碎（先替 terme 就再也匹配不到 à long terme）。
+    for s in sorted((x for x in secrets if len(x) >= 3), key=len, reverse=True):
+        # 中文没有词边界，汉字本身算 \w，加前界守卫会让「就长期的」里的
+        # 「长期的」永远匹配不上；拉丁词则需要前界，否则 an 会打碎 dans。
+        guard = "" if _CJK.search(s) else r"(?<!\w)"
+        # 只卡前边界不卡后边界：宁可把 services 挡成 ▢▢▢s，也不能因为多一个 s
+        # 就把答案漏出去——后边界留着会让复数和变位形式整片漏光。
+        text = re.sub(rf"{guard}{re.escape(s)}", _MASK, text, flags=re.I)
+    return text
+
+
 def _skeleton(t: str) -> str:
     s = _norm_zh(t)
     for p in _PLACEHOLDERS:
