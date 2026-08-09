@@ -1266,32 +1266,36 @@ col4.metric("正确率", f"{stats['accuracy']:.1f}%")
 
 
 with st.sidebar:
-    st.header("设置")
+    # 「设一次就不再动」的东西收进折叠区：语音、语速、每批词数、答对自动下一题，
+    # 都是装好之后几个月不碰的。折起来省下的四行，让「选课/模式/搜词」浮到
+    # 侧栏顶部——那才是每次打开都要点的。
+    # 位置必须在「学习」之前：下面的开始/错词/变形按钮都要用 batch_size。
+    with st.expander("⚙️ 设置"):
+        fr_voices = list_fr_voices()
+        if fr_voices:
+            default_index = fr_voices.index("Thomas") if "Thomas" in fr_voices else 0
+            voice = st.selectbox("语音", fr_voices, index=default_index)
+        else:
+            voice = st.text_input("语音", value="Thomas")
 
-    fr_voices = list_fr_voices()
-    if fr_voices:
-        default_index = fr_voices.index("Thomas") if "Thomas" in fr_voices else 0
-        voice = st.selectbox("语音", fr_voices, index=default_index)
-    else:
-        voice = st.text_input("语音", value="Thomas")
+        rate = st.slider("语速", min_value=80, max_value=220, value=135, step=5)
 
-    rate = st.slider("语速", min_value=80, max_value=220, value=135, step=5)
+        auto_next = st.checkbox("答对后自动下一题", value=False)
 
-    auto_next = st.checkbox("答对后自动下一题", value=False)
-    if "pending_mode" in st.session_state:   # 「变形」入口要求切到的模式（widget 实例化前才能设）
-        st.session_state["mode"] = st.session_state.pop("pending_mode")
-    mode_name = st.selectbox("模式", list(MODES), key="mode")
-    PROMPT_TYPE, ANSWER_FIELDS, SKILL = MODES[mode_name]
+        batch_size = st.number_input(
+            "每批词数（做完一批会停下来喘口气）",
+            min_value=1,
+            max_value=100,
+            value=10,
+            step=1,
+        )
 
-    st.divider()
-
-    batch_size = st.number_input(
-        "每批词数（做完一批会停下来喘口气）",
-        min_value=1,
-        max_value=100,
-        value=10,
-        step=1,
-    )
+        if st.button("🔄 重新扫描词表（加了课/改了文件后点）"):
+            load_vocab.clear()
+            load_checkpoints.clear()
+            load_conjugations.clear()
+            st.session_state.pop("_anki_ok_cache", None)  # 重生成过的 Anki 卡也强制刷新
+            st.rerun()
 
     st.subheader("学习")
     lesson_options = ["全部"] + sorted(LESSONS)
@@ -1303,6 +1307,11 @@ with st.sidebar:
     _scope = None if chosen_lesson == "全部" else _lesson_ids(chosen_lesson, LESSONS)
     _n_all = len(get_all_words()) if chosen_lesson == "全部" else len(_scope)
     _n_wrong = len(get_due_wrong_words(only_ids=_scope))
+
+    if "pending_mode" in st.session_state:   # 「变形」入口要求切到的模式（widget 实例化前才能设）
+        st.session_state["mode"] = st.session_state.pop("pending_mode")
+    mode_name = st.selectbox("模式", list(MODES), key="mode")
+    PROMPT_TYPE, ANSWER_FIELDS, SKILL = MODES[mode_name]
 
     if st.button(f"开始这一课（{_n_all} 词）", type="primary"):
         _leave_overlays()
@@ -1339,13 +1348,6 @@ with st.sidebar:
         st.session_state["writing_active"] = True
         st.rerun()
     st.caption("错词=做错过的；到期=顶部按遗忘曲线提醒；变形=有阴阳性的词；知识点=老师讲的非单词要点（含动词变位 + AI 造句批改；AI 卡提交时才加载本地模型）。")
-
-    if st.button("🔄 重新扫描词表（加了课/改了文件后点）"):
-        load_vocab.clear()
-        load_checkpoints.clear()
-        load_conjugations.clear()
-        st.session_state.pop("_anki_ok_cache", None)  # 重生成过的 Anki 卡也强制刷新
-        st.rerun()
 
     requested_rows = get_card_requested_words()
     with st.expander(f"📌 已预约制卡（{len(requested_rows)}）"):
