@@ -290,3 +290,44 @@ def load_all_vocab(base_dir):
                         existing.append(item)
                         existing_keys.add(key)
     return by_lemma, by_lesson
+
+
+# ---------- 全库搜词 ----------
+# 词库过千之后，侧栏词表只列当前这一轮的池子，够不到别的课的词。搜索是唯一
+# 能到达任意一个词的入口，所以它必须是全库的、且对重音宽容——记不清 sécurité
+# 上面有没有那一撇，正是要来查的原因。
+
+import unicodedata
+
+
+def fold(text: str) -> str:
+    """搜索用的归一：去重音、小写、撇号统一、压空格。判分不用这个，判分严格。"""
+    s = unicodedata.normalize("NFD", (text or "").lower())
+    s = "".join(c for c in s if unicodedata.category(c) != "Mn")
+    return " ".join(s.replace("’", "'").replace("‘", "'").split())
+
+
+def search(entries: dict, query: str, limit: int = 20) -> list[str]:
+    """在 {lemma: entry} 里找词，法语和中文都能搜。返回 lemma 列表，按相关度排。
+
+    排序：法语开头命中 > 法语包含 > 中文命中。同档按词长升序——短词更可能是
+    你想要的那个（搜 plat 时 le plat 排在 la plate-forme 前面）。
+    """
+    q = fold(query)
+    if not q:
+        return []
+    starts, contains, zh_hits = [], [], []
+    for lemma, entry in entries.items():
+        f = fold(lemma)
+        if f.startswith(q) or fold(_strip_notations(lemma)).startswith(q):
+            starts.append(lemma)
+        elif q in f:
+            contains.append(lemma)
+        else:
+            glosses = " ".join(
+                [entry.get("zh") or ""] + list((entry.get("zh_by_lesson") or {}).values())
+            )
+            if query.strip() and query.strip() in glosses:
+                zh_hits.append(lemma)
+    key = lambda x: (len(x), x)
+    return (sorted(starts, key=key) + sorted(contains, key=key) + sorted(zh_hits, key=key))[:limit]

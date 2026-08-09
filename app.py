@@ -325,12 +325,16 @@ def _provenance_source_label(source_ref: str) -> str:
     return source_ref
 
 
-def word_provenance(lemma: str) -> list[tuple[str, dict]]:
-    """Return provenance for the active lesson, retaining lesson labels for 全部."""
+def word_provenance(lemma: str, all_lessons: bool = False) -> list[tuple[str, dict]]:
+    """Return provenance for the active lesson, retaining lesson labels for 全部.
+
+    all_lessons=True 用于开卷查词：搜到的词常常不属于当前这一轮，按当前课过滤
+    会显示成一片空白；而且 290 个词跨多课，把每一课的来源都列出来才看得全。
+    """
     entry = VOCAB.get(lemma) or {}
     by_lesson = entry.get("provenance_by_lesson") or {}
     lesson = st.session_state.get("round_lesson")
-    if lesson and lesson != "全部":
+    if lesson and lesson != "全部" and not all_lessons:
         return [(lesson, item) for item in by_lesson.get(lesson, [])]
     return [
         (source_lesson, item)
@@ -360,9 +364,11 @@ def _answer_secrets(lemma: str, targets: tuple) -> list[str]:
     return [s for s in dict.fromkeys(out) if len(s) >= 3]
 
 
-def render_vocab_provenance(lemma: str, secrets: list[str] | None = None) -> None:
+def render_vocab_provenance(
+    lemma: str, secrets: list[str] | None = None, all_lessons: bool = False
+) -> None:
     """secrets 非空时把这些字串遮成 ▢▢▢（出题中）；None=开卷，原样显示。"""
-    records = word_provenance(lemma)
+    records = word_provenance(lemma, all_lessons=all_lessons)
     if not records:
         return
     hide = (lambda t: matcher.redact(t, secrets)) if secrets else (lambda t: t)
@@ -1874,6 +1880,35 @@ def render_practice() -> None:
                     st.write(f"{mark} `{item['answer']}`    {item['created_at']}")
 
 
+def render_search_panel():
+    """全库搜词。词表只列当前这一轮的池子，这是唯一能到达任意一个词的入口。
+
+    返回选中的 lemma（交给主区开卷显示），没搜或没选中返回 None。
+    """
+    q = st.text_input("🔎 搜词（法语或中文，不用管重音）", key="word_search",
+                      placeholder="securite / 长期 / plat")
+    if not q.strip():
+        st.session_state.pop("search_pick", None)
+        return None
+    hits = vocab_mod.search(VOCAB, q, limit=12)
+    if not hits:
+        st.caption(f"词库里没有「{q}」。")
+        return None
+    picked = st.session_state.get("search_pick")
+    if picked not in hits:
+        picked = None
+    st.caption(f"{len(hits)} 个结果，点一个看它的来处和练习记录：")
+    for lemma in hits:
+        entry = VOCAB.get(lemma) or {}
+        les = "·".join(entry.get("lessons") or []) or "—"
+        label = f"{'▸ ' if lemma == picked else ''}{lemma}　:gray[{les}]"
+        if st.button(label, key=f"sr_{lemma}", use_container_width=True):
+            st.session_state.search_pick = lemma
+            st.session_state.hide_preview = False
+            st.rerun()
+    return picked
+
+
 def render_word_panel():
     """右侧词表：行底色=历史掌握度（灰→黄→绿）；词前 ✅/❌=本轮结果。返回被点选的词或 None。"""
     if not st.session_state.get("pool"):
@@ -2180,11 +2215,47 @@ def render_checkpoint_panel() -> None:
         st.rerun()
 
 
+_SKILL_LABEL = {"transcribe": "听写", "produce": "产出", "meaning": "理解",
+                "pron": "发音", "morph": "变形", "form": "听写"}
+
+
+def render_study_trace(lemma: str) -> None:
+    """「在哪里背诵过」：这个词属于哪几课、各维度练成什么样、最近怎么答的。
+
+    词库过千之后，搜到一个词最先要回答的是「我在哪见过它」，光有释义不够。
+    """
+    entry = VOCAB.get(lemma) or {}
+    lessons = entry.get("lessons") or []
+    if lessons:
+        zh_by = entry.get("zh_by_lesson") or {}
+        # 同一个词在不同课可能挂不同的题号前缀，分开列才看得出各自的来处
+        parts = [f"`{les}`" + (f" {zh_by[les]}" if zh_by.get(les) else "") for les in lessons]
+        st.markdown("**出现在**：" + "　".join(parts))
+
+    ids = get_ids_for_lemmas([lemma])
+    if not ids:
+        st.caption("这个词还没进听写库（vocab.json 有，但 words 表里没有）。")
+        return
+    wid = ids[0]
+    attempts = get_attempts_for_words([wid]).get(wid, [])
+    if not attempts:
+        st.caption("还没练过这个词。")
+        return
+    scores = mastery_mod.skill_scores(attempts)
+    bits = []
+    for sk, sc in sorted(scores.items()):
+        done = [a for a in attempts if (a[2] or "form") == sk]
+        right = sum(1 for a in done if a[0])
+        bits.append(f"{_SKILL_LABEL.get(sk, sk)} {right}/{len(done)}（掌握 {sc:.0%}）")
+    st.caption("练习记录：" + " · ".join(bits) + f"　最近一次 {attempts[-1][1][:10]}")
+
+
 def render_card_view(lemma: str) -> None:
     """主窗口里开卷看某个词的完整 Anki 卡。"""
     zh = word_zh(lemma)
     st.subheader(f"📖 {lemma}" + (f" — {zh}" if zh else ""))
-    render_vocab_provenance(lemma)
+    render_study_trace(lemma)
+    render_vocab_provenance(lemma, all_lessons=True)
     # 软删除：点词进来这里就能隐藏/恢复（不用进听写流程）
     _ids = get_ids_for_lemmas([lemma])
     if _ids:
@@ -2561,7 +2632,7 @@ with st.sidebar:
         render_checkpoint_panel()
         _selected = None
     else:
-        _selected = render_word_panel()
+        _selected = render_search_panel() or render_word_panel()
 
 # 在词表里点某个词 → 主区开卷看它的卡；点「回到听写」收起
 if _selected != st.session_state.get("last_selected"):
