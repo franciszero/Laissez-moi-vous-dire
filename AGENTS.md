@@ -1,3 +1,20 @@
+# Known Backlog Gate
+
+Read `docs/BACKLOG.md` before investigating anything that looks like a bug, a
+design flaw, or a missing feature in this app.
+
+It records issues that are **already confirmed and deliberately deferred** — each
+entry carries the reproducing command, the measured numbers, and the reason it was
+left alone. Two failure modes it prevents:
+
+1. Re-investigating a known problem from scratch and reporting it as a discovery.
+2. "Fixing" behavior that is deliberate — e.g. `check_fr` rejects a missing accent
+   with no appeal path; that is the user's explicit choice, not an oversight.
+
+When you resolve an entry, delete it from `docs/BACKLOG.md` in the same commit.
+When you add one, include evidence (command, number, file:line); entries that only
+say "this feels wrong" get ignored by whoever reads next.
+
 # Existing Pattern First Gate
 
 Before modifying any existing file, UI flow, data loader, test, SRS behavior, or
