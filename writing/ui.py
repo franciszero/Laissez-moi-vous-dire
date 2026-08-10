@@ -7,19 +7,23 @@ from writing.contracts import WritingTask, WritingVersion
 from writing.service import WritingService
 
 
-def render_writing(service: WritingService, lesson: str, on_exit) -> None:
+def render_writing(service: WritingService, lesson: str | None, on_exit) -> None:
+    """lesson 只用来给下拉排序，不再决定能看到哪些题——写作题是独立实体。"""
     st.markdown(_STYLE, unsafe_allow_html=True)   # 纯装饰样式，每次 rerun 重发一遍
-    tasks = service.list_tasks(lesson)
+    tasks = service.list_tasks()
     if not tasks:
-        st.info("这一课还没有写作题。")
+        st.info("还没有任何写作题。")
         if st.button("↩︎ 退出写作", key="wr_exit"):
             on_exit()
             st.rerun()
         return
 
-    labels = {f"{t.task_id} · {t.title}": t.task_id for t in tasks}
+    # 当前选课的题排在前面，方便刚上完课直接写；但别的课的题始终够得到。
+    tasks = sorted(tasks, key=lambda t: (t.lesson != lesson, t.lesson, t.task_id))
+    labels = {f"{t.lesson} · {t.task_id} · {t.title}": t.task_id for t in tasks}
     chosen = st.selectbox("写作题", list(labels), key="wr_task_sel")
-    task, draft, versions = service.open_task(lesson, labels[chosen])
+    task, draft, versions = service.open_task(labels[chosen])
+    shared = service.shared_supports(task)
 
     if st.button("↩︎ 退出写作", key="wr_exit"):
         on_exit()
@@ -29,7 +33,7 @@ def render_writing(service: WritingService, lesson: str, on_exit) -> None:
     with left:
         _render_left(service, task, draft, versions)
     with right:
-        _render_right(task, versions)
+        _render_right(task, versions, shared)
 
 
 def _render_left(service: WritingService, task: WritingTask, draft, versions) -> None:
@@ -247,12 +251,31 @@ def _emit_slot_groups(stream: "_SupportStream", items, task: WritingTask) -> Non
             stream.support(sup)
 
 
-def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
+def _render_shared(shared, categories: tuple[str, ...]) -> None:
+    """同体裁其他题的通用素材。
+
+    默认折起来：本题自己的弹药在上面，这些是"这类题都能用"的储备，写不动时
+    才翻。不折的话 L34-W1 会从 8 条变成 33 条，右栏成一堵墙。
+    """
+    items = [(les, s) for les, s in shared if s.category in categories]
+    if not items:
+        return
+    srcs = "、".join(sorted({les for les, _ in items}))
+    with st.expander(f"📦 这类题通用（{len(items)} 条，来自 {srcs}）"):
+        st.caption("素材自己标了 scope=本类题／通用写作，所以跨题共用。")
+        stream = _SupportStream()
+        for les, sup in items:
+            stream.add(f":gray[{les}]", "")
+            stream.support(sup)
+        stream.flush()
+
+
+def _render_right(task: WritingTask, versions: tuple[WritingVersion, ...], shared=()) -> None:
     with st.container(height=_RIGHT_PANEL_HEIGHT):   # 资料区内部滚动，编辑器不被顶出视野
-        _render_right_body(task, versions)
+        _render_right_body(task, versions, shared)
 
 
-def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) -> None:
+def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...], shared=()) -> None:
     with st.container(key="wr_legend"):
         st.markdown(_LEGEND)
     tabs = st.tabs(["题目拆解", "骨架/逻辑", "弹药库", "老师讲解", "历史"])
@@ -262,12 +285,15 @@ def _render_right_body(task: WritingTask, versions: tuple[WritingVersion, ...]) 
 
     with tabs[1]:
         _render_flat(task, ("outline", "logic"))
+        _render_shared(shared, ("outline", "logic"))
 
     with tabs[2]:
         _render_ammo(task)
+        _render_shared(shared, ("content_ammo", "language_ammo"))
 
     with tabs[3]:
         _render_supports(task, ("teacher_tip",))
+        _render_shared(shared, ("teacher_tip",))
 
     with tabs[4]:
         if not versions:

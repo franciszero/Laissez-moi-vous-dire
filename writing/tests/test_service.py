@@ -23,7 +23,7 @@ def test_list_tasks_excludes_draft_status():
 
 def test_open_task_returns_task_draft_versions():
     svc = make_service()
-    task, draft, versions = svc.open_task("L33", "L33-W1")
+    task, draft, versions = svc.open_task("L33-W1")
     assert task.task_id == "L33-W1" and draft is None and versions == ()
 
 
@@ -31,7 +31,7 @@ def test_draft_overwrites_not_appends():
     svc = make_service()
     svc.save_draft("L33-W1", "premier")
     svc.save_draft("L33-W1", "deuxième")
-    _, draft, versions = svc.open_task("L33", "L33-W1")
+    _, draft, versions = svc.open_task("L33-W1")
     assert draft.text == "deuxième" and versions == ()
 
 

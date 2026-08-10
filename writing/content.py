@@ -108,28 +108,62 @@ class JsonWritingContent:
             for k, v in data.get("skeletons", {}).items()
         }
 
-    def _load_all(self, lesson: str) -> tuple[WritingTask, ...]:
-        path = self._root / lesson / "writing_tasks.json"
-        if not path.exists():
-            return ()
-        data = json.loads(path.read_text(encoding="utf-8"))
-        sk = self._load_skeletons()
-        tasks = tuple(
-            _parse_task(t, sk.get(t.get("tcf_task_type", ""), ())) for t in data.get("tasks", [])
-        )
-        ids = [t.task_id for t in tasks]
-        if len(ids) != len(set(ids)):
-            raise ContentError(f"{path} task_id 重复")
-        return tasks
+    def _load_all(self) -> tuple[WritingTask, ...]:
+        """扫全库的 L*/writing_tasks.json。
 
-    def list_tasks(self, lesson: str) -> tuple[WritingTaskSummary, ...]:
+        lesson 不再是「找文件的路径」，只是题目的一个属性——加载出来的
+        WritingTask 自带 .lesson。这样才能不选课就列题，也才能在渲染 A 题时
+        取到 B 题里标了「本类题/通用」的素材。
+        """
+        sk = self._load_skeletons()
+        out: list[WritingTask] = []
+        for path in sorted(self._root.glob("L*/writing_tasks.json")):
+            data = json.loads(path.read_text(encoding="utf-8"))
+            tasks = [
+                _parse_task(t, sk.get(t.get("tcf_task_type", ""), ()))
+                for t in data.get("tasks", [])
+            ]
+            ids = [t.task_id for t in tasks]
+            if len(ids) != len(set(ids)):
+                raise ContentError(f"{path} task_id 重复")
+            # 目录名和 lesson 字段必须一致。跨课加载之后 lesson 字段成了归属的
+            # 唯一依据，写错就会把题悄悄归到别的课去，且不报任何错。
+            wrong = [t.task_id for t in tasks if t.lesson != path.parent.name]
+            if wrong:
+                raise ContentError(
+                    f"{path}：lesson 字段与目录名 {path.parent.name} 不符 → {wrong}")
+            out += tasks
+        ids = [t.task_id for t in out]
+        dup = {i for i in ids if ids.count(i) > 1}
+        if dup:
+            raise ContentError(f"task_id 跨课重复：{sorted(dup)}——它现在是全库唯一键")
+        return tuple(out)
+
+    def list_tasks(self, lesson: str | None = None) -> tuple[WritingTaskSummary, ...]:
         return tuple(
             WritingTaskSummary(t.task_id, t.lesson, t.title, t.tcf_task_type)
-            for t in self._load_all(lesson) if t.status == "teacher_reviewed"
+            for t in self._load_all()
+            if t.status == "teacher_reviewed" and lesson in (None, "全部", t.lesson)
         )
 
-    def load_task(self, lesson: str, task_id: str) -> WritingTask:
-        for t in self._load_all(lesson):
+    def load_task(self, task_id: str) -> WritingTask:
+        for t in self._load_all():
             if t.task_id == task_id:
                 return t
-        raise KeyError(f"{lesson}/{task_id}")
+        raise KeyError(task_id)
+
+    def shared_supports(self, task: WritingTask):
+        """同体裁其他题里标了 task_type/general 的素材，带来源课号。
+
+        只从 teacher_reviewed 的题里取：draft 状态的题还没核验过，它的「通用」
+        素材不该悄悄流进别的题。
+        """
+        return tuple(
+            (other.lesson, sup)
+            for other in self._load_all()
+            if other.task_id != task.task_id
+            and other.tcf_task_type == task.tcf_task_type
+            and other.status == "teacher_reviewed"
+            for sup in other.supports
+            if sup.scope in ("task_type", "general")
+        )

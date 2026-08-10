@@ -17,14 +17,17 @@ class WritingService:
         self._content = content
         self._history = history
 
-    def list_tasks(self, lesson: str) -> tuple[WritingTaskSummary, ...]:
+    def list_tasks(self, lesson: str | None = None) -> tuple[WritingTaskSummary, ...]:
         return self._content.list_tasks(lesson)
 
     def open_task(
-        self, lesson: str, task_id: str
+        self, task_id: str
     ) -> tuple[WritingTask, WritingDraft | None, tuple[WritingVersion, ...]]:
-        task = self._content.load_task(lesson, task_id)
+        task = self._content.load_task(task_id)
         return task, self._history.load_draft(task_id), self._history.list_versions(task_id)
+
+    def shared_supports(self, task: WritingTask):
+        return self._content.shared_supports(task)
 
     def save_draft(self, task_id: str, text: str) -> WritingDraft:
         return self._history.save_draft(task_id, text)

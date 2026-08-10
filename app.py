@@ -1230,11 +1230,15 @@ def _writing_content():
 
 
 def _writing_task_summaries(lesson: str) -> list:
-    if lesson == "全部":
-        return []
+    """全库的写作题，不受选课限制。
+
+    以前这里是 `if lesson == "全部": return []`——写作被锁在"先选课"后面，
+    而一道作文题本身是独立实体，课只是它的一个属性。lesson 现在只影响下拉
+    里的排序（当前课的排前面），不影响能不能看到。
+    """
     from writing.content import ContentError
     try:
-        return list(_writing_content().list_tasks(lesson))
+        return list(_writing_content().list_tasks())
     except ContentError as e:
         st.caption(f"⚠️ 写作内容文件有误：{e}")
         return []

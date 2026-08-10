@@ -15,18 +15,29 @@ class InMemoryContent:
     def __init__(self, tasks: list[WritingTask]) -> None:
         self._tasks = list(tasks)
 
-    def list_tasks(self, lesson: str) -> tuple[WritingTaskSummary, ...]:
+    def list_tasks(self, lesson: str | None = None) -> tuple[WritingTaskSummary, ...]:
         return tuple(
             WritingTaskSummary(t.task_id, t.lesson, t.title, t.tcf_task_type)
             for t in self._tasks
-            if t.lesson == lesson and t.status == "teacher_reviewed"
+            if t.status == "teacher_reviewed" and lesson in (None, "全部", t.lesson)
         )
 
-    def load_task(self, lesson: str, task_id: str) -> WritingTask:
+    def load_task(self, task_id: str) -> WritingTask:
         for t in self._tasks:
-            if t.lesson == lesson and t.task_id == task_id:
+            if t.task_id == task_id:
                 return t
-        raise KeyError(f"{lesson}/{task_id}")
+        raise KeyError(task_id)
+
+    def shared_supports(self, task: WritingTask):
+        return tuple(
+            (o.lesson, sup)
+            for o in self._tasks
+            if o.task_id != task.task_id
+            and o.tcf_task_type == task.tcf_task_type
+            and o.status == "teacher_reviewed"
+            for sup in o.supports
+            if sup.scope in ("task_type", "general")
+        )
 
 
 class InMemoryHistory:
