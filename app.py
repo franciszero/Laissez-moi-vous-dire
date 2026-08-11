@@ -1301,11 +1301,11 @@ with st.sidebar:
             st.session_state.pop("_anki_ok_cache", None)  # 重生成过的 Anki 卡也强制刷新
             st.rerun()
 
-    st.subheader("学习")
     lesson_options = ["全部"] + sorted(LESSONS)
     if "sel_lesson" not in st.session_state:   # 刷新/重开默认停在上次那一课
         _last = load_setting("last_lesson", "全部")
         st.session_state.sel_lesson = _last if _last in lesson_options else "全部"
+    st.subheader("学习")
     chosen_lesson = st.selectbox("选课", lesson_options, key="sel_lesson")
 
     _scope = None if chosen_lesson == "全部" else _lesson_ids(chosen_lesson, LESSONS)
@@ -1317,7 +1317,7 @@ with st.sidebar:
     mode_name = st.selectbox("模式", list(MODES), key="mode")
     PROMPT_TYPE, ANSWER_FIELDS, SKILL = MODES[mode_name]
 
-    if st.button(f"开始这一课（{_n_all} 词）", type="primary"):
+    if st.button(f"开始这一课（{_n_all} 词）", type="primary", use_container_width=True):
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         if start_lesson_round(chosen_lesson, LESSONS, batch_size):
@@ -1325,34 +1325,46 @@ with st.sidebar:
         else:
             st.warning("这一课还没有词。")
 
-    if st.button(f"错词（{_n_wrong}）", disabled=_n_wrong == 0):   # 到期复习改由顶部 banner 统一入口
+    # 错词和变形是同一层的次级入口，标签短、数字小、语义对称——并排放。
+    # 实测侧栏可用 256px，两个按钮自然宽 84px，装得下。
+    _n_fem = len(_fem_ids(chosen_lesson, LESSONS))
+    _c_wrong, _c_fem = st.columns(2)
+    if _c_wrong.button(f"错词（{_n_wrong}）", disabled=_n_wrong == 0,
+                       use_container_width=True):   # 到期复习改由顶部 banner 统一入口
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         start_lesson_review(chosen_lesson, LESSONS, False, batch_size)
         st.rerun()
-
-    _n_fem = len(_fem_ids(chosen_lesson, LESSONS))
-    if st.button(f"变形（{_n_fem}）", disabled=_n_fem == 0):
+    if _c_fem.button(f"变形（{_n_fem}）", disabled=_n_fem == 0, use_container_width=True):
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         start_lesson_morph(chosen_lesson, LESSONS, batch_size)
         st.rerun()
 
     _cards = _lesson_cards(chosen_lesson)            # checkpoint 卡 + 动词变位卡，统一一个 deck
-    if st.button(f"📝 知识点（{len(_cards)}）", disabled=not _cards):
+    if st.button(f"📝 知识点（{len(_cards)}）", disabled=not _cards,
+                 use_container_width=True):
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         _start_cards(_cards, f"知识点 · {chosen_lesson}", chosen_lesson)
         st.rerun()
 
+    st.caption("错词=做错过的；到期=顶部按遗忘曲线提醒；变形=有阴阳性的词；"
+               "知识点=老师讲的非单词要点（含动词变位 + AI 造句批改；AI 卡提交时才加载本地模型）。")
+
+    # 写作不归「学习 · 某课」管——它已经是全库入口了。放在选课底下、和错词变形
+    # 并排，会让人以为那 3 道题属于当前这一课；实测选着 L35 时它仍显示 3，而
+    # L35 一道写作题都没有。
+    st.subheader("不分课")
     _wr_tasks = _writing_task_summaries(chosen_lesson)
-    if st.button(f"✍️ 写作练习（{len(_wr_tasks)}）", disabled=not _wr_tasks):
+    if st.button(f"✍️ 写作练习（{len(_wr_tasks)}）", disabled=not _wr_tasks,
+                 use_container_width=True):
         _leave_overlays()
-        save_setting("last_lesson", chosen_lesson)
         st.session_state["writing_active"] = True
         st.rerun()
-    st.caption("错词=做错过的；到期=顶部按遗忘曲线提醒；变形=有阴阳性的词；知识点=老师讲的非单词要点（含动词变位 + AI 造句批改；AI 卡提交时才加载本地模型）。")
+    st.caption("全库的作文题，不受上面「选课」影响；进去之后按课分组，当前这一课的排前面。")
 
+    st.subheader("词库")
     requested_rows = get_card_requested_words()
     with st.expander(f"📌 已预约制卡（{len(requested_rows)}）"):
         if not requested_rows:

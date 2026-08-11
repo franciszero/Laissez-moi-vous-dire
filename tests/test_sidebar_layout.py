@@ -63,3 +63,37 @@ def test_lesson_entry_buttons_stay_outside_settings(at):
     inside = _labels(_settings(at))
     for label in ("开始这一课", "错词", "变形", "📝 知识点", "✍️ 写作练习"):
         assert not any(b.startswith(label) for b in inside), f"{label} 不该被折进设置"
+
+
+# ---- 分组：按「受不受选课支配」分，不是按「是什么」分 ----
+
+LESSON_SCOPED = ("开始这一课", "错词", "变形", "📝 知识点")
+
+
+def test_sidebar_has_three_named_groups(at):
+    """三组：学习（受选课支配）／不分课／词库。没有分组名，一堆等宽按钮读不出层级。"""
+    heads = {h.value for h in at.sidebar.subheader}
+    assert {"学习", "不分课", "词库"} <= heads, f"缺分组标题：{heads}"
+
+
+def test_writing_is_not_under_the_lesson_group(at):
+    """写作已经不受选课支配了——2026-08-07 起它是全库入口。
+
+    但它一度还挂在「选课」正下方、和错词/变形并排：选着 L35（一道写作题都没有）
+    时按钮仍显示「写作练习（3）」，那 3 道全是 L33/L34 的。位置在说谎。
+    """
+    labels = [b.label for b in at.sidebar.button]
+    wr = next(i for i, l in enumerate(labels) if l.startswith("✍️ 写作练习"))
+    for name in LESSON_SCOPED:
+        idx = next(i for i, l in enumerate(labels) if l.startswith(name))
+        assert idx < wr, f"「{name}」应排在写作之前——写作属于「不分课」组"
+
+
+def test_writing_count_does_not_follow_the_selected_lesson(at):
+    """行为验证：换课时写作数量不变，说明它确实不受选课支配。"""
+    def n():
+        return next(b.label for b in at.sidebar.button if b.label.startswith("✍️"))
+    at.selectbox(key="sel_lesson").set_value("L34").run()
+    a = n()
+    at.selectbox(key="sel_lesson").set_value("全部").run()
+    assert n() == a, "写作数量跟着选课变，说明又被课作用域绑回去了"
