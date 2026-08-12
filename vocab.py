@@ -356,8 +356,10 @@ def search(entries: dict, query: str, limit: int = 20) -> list[str]:
     排序：正向命中 > 原型命中 > 词内命中 > 中文。同档按词长升序——短词更可能
     是你要的那个（搜 plat 时 le plat 排在 un plat principal 前面）。
 
-    法语侧一律按**词**匹配，不做裸子串：查询是完整单词（哪怕是变形），
-    命中词中间的一段字母没有用。中文侧保留子串——中文没有词边界。
+    法语侧一律**整词相等**，既不做裸子串也不做前缀：你输入的是一个完整单词
+    （哪怕是变形），拿半截去匹配只会返回你没在找的东西。输入不全时 search 返回
+    空，由 `near()` 去给「是不是想找」——猜测和命中分开呈现，别混在一张列表里。
+    中文侧保留子串——中文没有词边界。
     """
     q = fold(query)
     if not q:
@@ -368,13 +370,13 @@ def search(entries: dict, query: str, limit: int = 20) -> list[str]:
         f = fold(lemma)
         stem = fold(_SEARCH_ARTICLE.sub("", f))
         fem = fold(entry.get("fem") or "")
-        if f.startswith(q) or stem.startswith(q) or fold(_strip_notations(lemma)).startswith(q):
+        if q in (f, stem, fold(_strip_notations(lemma))):
             starts.append(lemma)
-        elif fem and (fem.startswith(q) or fold(lemma_of(fem)) == ql):
+        elif fem and (fem == q or fold(lemma_of(fem)) == ql):
             starts.append(lemma)          # 阴性是词库自己标的，不是推断
         elif ql != q and (fold(lemma_of(stem)) == ql or fold(lemma_of(f)) == ql):
             lemma_hits.append(lemma)      # 两边都还原成原型之后相等
-        elif any(t.startswith(q) for t in _tokens(f)):
+        elif q in _tokens(f):
             contains.append(lemma)      # 完整词命中短语里的某一个词
         elif _CJK.search(query):
             # 只有中文查询才查中文义。拉丁查询走中文分支会撞上我自己写在

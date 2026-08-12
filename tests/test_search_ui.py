@@ -26,7 +26,8 @@ def test_search_reaches_a_word_outside_the_current_round(tmp_path):
         next(b for b in at.button if b.label.startswith("开始这一课")).click().run()
         assert at.session_state.round_lesson == "L34"
 
-        at.text_input(key="word_search").set_value("integr").run()
+        # 整词（去重音也行）——半截词现在归 near() 的「是不是想找」，不进结果列表
+        at.text_input(key="word_search").set_value("s'integrer").run()
         assert not at.exception
         keys = [b.key for b in at.button if b.key and b.key.startswith("sr_")]
         assert "sr_s'intégrer" in keys, f"没搜到 L31 的词：{keys}"
@@ -69,5 +70,20 @@ def test_miss_says_so_without_crashing(tmp_path):
         at.text_input(key="word_search").set_value("zzzznotaword").run()
         assert not at.exception
         assert any("没有" in c.value for c in at.caption)
+    finally:
+        _restore(db, bak)
+
+
+def test_partial_input_offers_guesses_instead_of_results(tmp_path):
+    """半截词不该混进结果列表，但也不能就此断掉——给「是不是想找」。"""
+    at, db, bak = _app(tmp_path)
+    try:
+        at.text_input(key="word_search").set_value("sécu").run()
+        assert not at.exception
+        assert not [b for b in at.button if b.key and b.key.startswith("sr_")], \
+            "半截词不该出现在「N 个结果」里"
+        guesses = [b.key for b in at.button if b.key and b.key.startswith("sn_")]
+        assert "sn_la sécurité" in guesses, f"应给出猜测：{guesses}"
+        assert any("猜的" in c.value for c in at.caption), "必须标明这是猜的"
     finally:
         _restore(db, bak)

@@ -22,7 +22,7 @@ def test_fold_drops_accents_and_case():
 def test_search_finds_word_without_accents(entries):
     """记不清 sécurité 上面有没有那一撇，正是要来查的原因。"""
     assert "la sécurité" in vocab.search(entries, "securite")
-    assert "la sécurité" in vocab.search(entries, "SÉCU")
+    assert "la sécurité" in vocab.search(entries, "SÉCURITÉ")     # 大小写也不管
 
 
 def test_search_by_chinese(entries):
@@ -36,10 +36,37 @@ def test_shorter_lemma_ranks_first(entries):
     assert "un plat principal" in hits
 
 
-def test_prefix_beats_substring(entries):
-    hits = vocab.search(entries, "integr")
-    assert hits, "去重音后应能命中 s'intégrer / l'intégration"
-    assert all("ntégr" in h or "ntegr" in h for h in hits)
+def test_partial_input_is_a_miss_not_a_result(entries):
+    """search 只报「命中」，半截词不是命中。
+
+    输入不全时返回空，由 near() 给出「是不是想找」——猜测和命中分开呈现，
+    混在一张列表里就分不清哪条是真找到的。
+    """
+    for partial in ("sécu", "intéress", "ent"):
+        assert vocab.search(entries, partial) == [], partial
+        assert vocab.near(entries, partial), f"{partial} 应该有猜测兜底"
+    assert "la sécurité" in vocab.near(entries, "sécu")
+    assert "intéressant" in vocab.near(entries, "intéress")
+
+
+def test_every_stored_word_is_findable_by_typing_it(entries):
+    """收紧成整词相等之后最该防的回归：词库里的词自己搜不到自己。
+
+    三种输入方式都得能找到：整条 lemma、去冠词的词干、阴性形式。
+    """
+    art = vocab._SEARCH_ARTICLE
+    missed_full = [k for k in entries if k not in vocab.search(entries, k, 50)]
+    missed_stem = [
+        k for k in entries
+        if k not in vocab.search(entries, art.sub("", vocab.fold(k)), 50)
+    ]
+    missed_fem = [
+        k for k, v in entries.items()
+        if v.get("fem") and k not in vocab.search(entries, v["fem"], 50)
+    ]
+    assert not missed_full, missed_full[:5]
+    assert not missed_stem, missed_stem[:5]
+    assert not missed_fem, missed_fem[:5]
 
 
 def test_search_respects_limit_and_empty_query(entries):
