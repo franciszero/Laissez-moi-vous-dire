@@ -113,3 +113,37 @@ def test_near_suggests_when_search_finds_nothing(entries):
 def test_near_stays_quiet_on_garbage_and_short_input(entries):
     assert vocab.near(entries, "zzzznope") == []
     assert vocab.near(entries, "ab") == []
+
+
+# ---- 只按「词」匹配，不做裸子串 ----
+
+def test_no_mid_word_fragment_matches(entries):
+    """搜的是完整单词（哪怕是变形），命中词中间的一段字母对学习者没有用。
+
+    改之前：ion 命中 50 条，全是 d'occasion / l'adoption / la passion 这类；
+    irai 命中 partirait（part-irai-t）。
+    """
+    assert vocab.search(entries, "ion") == []
+    assert vocab.search(entries, "irai") == []
+    for hit in vocab.search(entries, "ent", 50):
+        assert any(t.startswith("ent") for t in vocab._tokens(vocab.fold(hit))), hit
+
+
+def test_whole_word_still_matches_inside_a_phrase(entries):
+    """砍碎片不能误伤：完整词命中短语里的某一个词是有用的。"""
+    assert "un plat principal" in vocab.search(entries, "principal")
+    assert "s'intéresser à" in vocab.search(entries, "intéresser")
+    assert set(vocab.search(entries, "terme")) >= {"à long terme", "à court terme"}
+
+
+def test_latin_query_never_matches_via_the_chinese_gloss(entries):
+    """中文义里混着我自己写的法语（[Opus5 建议：…] 里的 estimation / important /
+    brocante）。拉丁查询走中文分支会撞上它们——那不是词义，是注释里的字母。"""
+    assert "évaluer" not in vocab.search(entries, "ion", 50)      # 理由里有 estimation
+    assert "primordial" not in vocab.search(entries, "ant", 50)   # 理由里有 important
+    assert "le marché" not in vocab.search(entries, "ant", 50)    # 理由里有 brocante
+
+
+def test_chinese_query_still_searches_the_gloss(entries):
+    assert "à long terme" in vocab.search(entries, "长期")
+    assert "le bruit" in vocab.search(entries, "噪音")

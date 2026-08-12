@@ -308,6 +308,19 @@ def fold(text: str) -> str:
 
 
 _SEARCH_ARTICLE = re.compile(r"^(le |la |les |un |une |des |du |l'|se |s')")
+# 词边界：空格、撇号、连字符。用它切词而不是裸子串匹配——搜的是完整单词
+# （哪怕是变形），命中词中间的一段字母对学习者没有任何用处：搜 ion 会撞出
+# d'occasion / l'adoption / la passion 共 50 条，全是噪音；搜 irai 撞出
+# part-irai-t。而按词切之后 plat→un plat principal、intéresser→s'intéresser à
+# 这类「完整词命中短语里的一个词」一条不少。
+_TOKEN_SPLIT = re.compile(r"[ '’\-]+")
+
+
+def _tokens(folded: str) -> list[str]:
+    return [t for t in _TOKEN_SPLIT.split(folded) if t]
+
+
+_CJK = re.compile(r"[\u4e00-\u9fff]")
 
 try:                      # 法语词形还原：查表式，无模型，结果确定
     import simplemma
@@ -340,8 +353,11 @@ def search(entries: dict, query: str, limit: int = 20) -> list[str]:
     - 词库里每条也过一遍（`les vêtements` → `vêtement`），两边在原型层相遇
     - 外加 `fem` 字段：那是本词库自己标注的确定数据，优先级最高
 
-    排序：正向命中 > 原型命中 > 法语包含 > 中文。同档按词长升序——短词更可能
+    排序：正向命中 > 原型命中 > 词内命中 > 中文。同档按词长升序——短词更可能
     是你要的那个（搜 plat 时 le plat 排在 un plat principal 前面）。
+
+    法语侧一律按**词**匹配，不做裸子串：查询是完整单词（哪怕是变形），
+    命中词中间的一段字母没有用。中文侧保留子串——中文没有词边界。
     """
     q = fold(query)
     if not q:
@@ -358,13 +374,17 @@ def search(entries: dict, query: str, limit: int = 20) -> list[str]:
             starts.append(lemma)          # 阴性是词库自己标的，不是推断
         elif ql != q and (fold(lemma_of(stem)) == ql or fold(lemma_of(f)) == ql):
             lemma_hits.append(lemma)      # 两边都还原成原型之后相等
-        elif q in f:
-            contains.append(lemma)
-        else:
+        elif any(t.startswith(q) for t in _tokens(f)):
+            contains.append(lemma)      # 完整词命中短语里的某一个词
+        elif _CJK.search(query):
+            # 只有中文查询才查中文义。拉丁查询走中文分支会撞上我自己写在
+            # 「[Opus5 建议：…]」里的法语词——搜 ant 撞出 le marché（理由里有
+            # brocante）和 primordial（理由里有 important），搜 ion 撞出 évaluer
+            # （理由里有 estimation）。那不是这个词的意思，是注释里的字母。
             glosses = " ".join(
                 [entry.get("zh") or ""] + list((entry.get("zh_by_lesson") or {}).values())
             )
-            if query.strip() and query.strip() in glosses:
+            if query.strip() in glosses:
                 zh_hits.append(lemma)
     key = lambda x: (len(x), x)
     return (sorted(starts, key=key) + sorted(lemma_hits, key=key)
