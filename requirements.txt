@@ -1,2 +1,3 @@
 streamlit>=1.30
 pyobjc-framework-CoreServices>=10 ; sys_platform == "darwin"
+simplemma>=2,<3   # 法语词形还原：查表、无模型、结果确定

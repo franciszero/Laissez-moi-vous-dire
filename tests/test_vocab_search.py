@@ -51,3 +51,65 @@ def test_search_respects_limit_and_empty_query(entries):
 
 def test_search_miss_returns_empty(entries):
     assert vocab.search(entries, "zzzzzznotaword") == []
+
+
+# ---- 变形：你多半是在别处读到一个变形才来查的 ----
+
+def test_feminine_form_finds_its_lemma(entries):
+    """intéressant 的 fem 字段字面就是 intéressante，但搜索一度不看这个字段——
+    110 个带阴性的词整类搜不到。"""
+    assert "intéressant" in vocab.search(entries, "intéressante")
+    assert "intelligent" in vocab.search(entries, "intelligente")
+
+
+def test_feminine_match_outranks_a_coincidental_substring(entries):
+    """cliente 是 un client 的阴性；une clientèle 只是碰巧含这几个字母。"""
+    hits = vocab.search(entries, "cliente")
+    assert hits[0] in ("client", "un client"), hits[:3]
+
+
+def test_plural_finds_the_singular(entries):
+    assert "le plat" in vocab.search(entries, "plats")
+    assert "la sécurité" in vocab.search(entries, "sécurités")
+
+
+def test_direct_hit_still_ranks_first(entries):
+    hits = vocab.search(entries, "plat")
+    assert hits[0] in ("le plat", "un plat"), hits[:3]
+
+
+def test_lemmatizer_does_not_confuse_lookalikes(entries):
+    """plateformes 的原型是 plateforme，不是 plat——手写的「前缀 + 容忍几个字母」
+    会把它错配到 le plat 上，查表式还原不会。"""
+    assert "le plat" not in vocab.search(entries, "plateformes")
+    assert vocab.lemma_of("plateformes") == "plateforme"
+
+
+def test_conjugated_verb_resolves_to_its_infinitive(entries):
+    """手写规则做不到这个：irai → aller 是不规则变位，没有可套的后缀模式。"""
+    assert vocab.lemma_of("irai") == "aller"
+    assert vocab.lemma_of("dégusterez") == "déguster"
+    assert vocab.lemma_of("allés") == "aller"
+
+
+def test_irregular_feminine_resolves(entries):
+    """coûteuse → coûteux 也不是「去掉一个 e」能办到的。"""
+    assert vocab.lemma_of("coûteuse") == "coûteux"
+    assert "coûteux" in vocab.search(entries, "coûteuse")
+
+
+def test_lemmatizer_leaves_non_french_alone(entries):
+    """中文、多词短语、已是原型的词都不能被改坏。"""
+    for w in ("长期", "à long terme", "intéressant", "le plat", "L35"):
+        assert vocab.lemma_of(w) == w, w
+    assert "à long terme" in vocab.search(entries, "长期")
+
+
+def test_near_suggests_when_search_finds_nothing(entries):
+    assert vocab.search(entries, "intéressassion") == []
+    assert "intéressant" in vocab.near(entries, "intéressassion")
+
+
+def test_near_stays_quiet_on_garbage_and_short_input(entries):
+    assert vocab.near(entries, "zzzznope") == []
+    assert vocab.near(entries, "ab") == []

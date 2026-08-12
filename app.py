@@ -1909,17 +1909,33 @@ def render_search_panel():
         st.session_state.pop("search_pick", None)
         return None
     hits = vocab_mod.search(VOCAB, q, limit=12)
-    if not hits:
-        st.caption(f"词库里没有「{q}」。")
-        return None
     picked = st.session_state.get("search_pick")
     if picked not in hits:
         picked = None
+
+    if not hits:
+        # 真没有的时候要说清「接下来能做什么」，而不是只丢一句没有。
+        st.caption(f"词库里没有「{q}」。")
+        guesses = vocab_mod.near(VOCAB, q)
+        if guesses:
+            st.caption("是不是想找（猜的，不是词库里的写法）：")
+            for lemma in guesses:
+                if st.button(lemma, key=f"sn_{lemma}", use_container_width=True):
+                    st.session_state.search_pick = lemma
+                    st.session_state.hide_preview = False
+                    st.rerun()
+        st.caption("要么这个词还没在任何一课里出现过，要么那一课还没上线。"
+                   "想收进来：用下面的「➕ 添加 / 自定义词表」。")
+        return None
+
     st.caption(f"{len(hits)} 个结果，点一个看它的来处和练习记录：")
     for lemma in hits:
         entry = VOCAB.get(lemma) or {}
         les = "·".join(entry.get("lessons") or []) or "—"
-        label = f"{'▸ ' if lemma == picked else ''}{lemma}　:gray[{les}]"
+        # 阴性形式一并显示：你敲 intéressante 搜到 intéressant，不写出来会以为搜错了
+        fem = entry.get("fem")
+        form = f"{lemma}／{fem}" if fem else lemma
+        label = f"{'▸ ' if lemma == picked else ''}{form}　:gray[{les}]"
         if st.button(label, key=f"sr_{lemma}", use_container_width=True):
             st.session_state.search_pick = lemma
             st.session_state.hide_preview = False

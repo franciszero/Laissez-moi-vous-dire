@@ -307,20 +307,57 @@ def fold(text: str) -> str:
     return " ".join(s.replace("’", "'").replace("‘", "'").split())
 
 
+_SEARCH_ARTICLE = re.compile(r"^(le |la |les |un |une |des |du |l'|se |s')")
+
+try:                      # 法语词形还原：查表式，无模型，结果确定
+    import simplemma
+
+    def lemma_of(text: str) -> str:
+        """变形 → 原型。intéressante→intéressant、irai→aller、coûteuse→coûteux。
+
+        手写规则做不了这件事：法语的阴性、复数、变位有大量不规则形式，靠
+        「多出几个字母就算命中」既漏（intelligente）又错（plateaux 会匹上 plat）。
+        simplemma 是查表，没有模型也没有随机性，同样的输入永远同样的输出。
+        中文、多词短语、已是原型的词都原样返回，不会被改坏。
+        """
+        return " ".join(
+            simplemma.lemmatize(tok, lang="fr") if tok else tok
+            for tok in (text or "").split(" ")
+        )
+except ImportError:       # 没装就退化成不还原——搜得少一些，但不炸
+    def lemma_of(text: str) -> str:
+        return text or ""
+
+
 def search(entries: dict, query: str, limit: int = 20) -> list[str]:
     """在 {lemma: entry} 里找词，法语和中文都能搜。返回 lemma 列表，按相关度排。
 
-    排序：法语开头命中 > 法语包含 > 中文命中。同档按词长升序——短词更可能是
-    你想要的那个（搜 plat 时 le plat 排在 la plate-forme 前面）。
+    你查一个词，多半是**在别处读到它**才来查的——那里出现的往往是变形：
+    阴性 intéressante、复数 plats、变位 irai。词库存的是原形，直接比字符串就会
+    告诉你「词库里没有」，而它其实躺在那儿。所以两边都先还原成原型再比：
+
+    - 查询词过一遍 `lemma_of`（intéressante → intéressant）
+    - 词库里每条也过一遍（`les vêtements` → `vêtement`），两边在原型层相遇
+    - 外加 `fem` 字段：那是本词库自己标注的确定数据，优先级最高
+
+    排序：正向命中 > 原型命中 > 法语包含 > 中文。同档按词长升序——短词更可能
+    是你要的那个（搜 plat 时 le plat 排在 un plat principal 前面）。
     """
     q = fold(query)
     if not q:
         return []
-    starts, contains, zh_hits = [], [], []
+    ql = fold(lemma_of(query.strip()))
+    starts, lemma_hits, contains, zh_hits = [], [], [], []
     for lemma, entry in entries.items():
         f = fold(lemma)
-        if f.startswith(q) or fold(_strip_notations(lemma)).startswith(q):
+        stem = fold(_SEARCH_ARTICLE.sub("", f))
+        fem = fold(entry.get("fem") or "")
+        if f.startswith(q) or stem.startswith(q) or fold(_strip_notations(lemma)).startswith(q):
             starts.append(lemma)
+        elif fem and (fem.startswith(q) or fold(lemma_of(fem)) == ql):
+            starts.append(lemma)          # 阴性是词库自己标的，不是推断
+        elif ql != q and (fold(lemma_of(stem)) == ql or fold(lemma_of(f)) == ql):
+            lemma_hits.append(lemma)      # 两边都还原成原型之后相等
         elif q in f:
             contains.append(lemma)
         else:
@@ -330,4 +367,27 @@ def search(entries: dict, query: str, limit: int = 20) -> list[str]:
             if query.strip() and query.strip() in glosses:
                 zh_hits.append(lemma)
     key = lambda x: (len(x), x)
-    return (sorted(starts, key=key) + sorted(contains, key=key) + sorted(zh_hits, key=key))[:limit]
+    return (sorted(starts, key=key) + sorted(lemma_hits, key=key)
+            + sorted(contains, key=key) + sorted(zh_hits, key=key))[:limit]
+
+
+def near(entries: dict, query: str, limit: int = 5) -> list[str]:
+    """严格搜索为空时的「是不是想找」。
+
+    按共同前缀长度排。故意和 search 分开：search 的结果是「找到了」，
+    这里的结果是「猜的」，UI 上必须说清楚，否则学习者会以为词库里就长这样。
+    """
+    q = fold(query)
+    if len(q) < 3:
+        return []
+    scored = []
+    for lemma in entries:
+        f = fold(_SEARCH_ARTICLE.sub("", fold(lemma)))
+        n = 0
+        for a, b in zip(q, f):
+            if a != b:
+                break
+            n += 1
+        if n >= 3:
+            scored.append((-n, len(lemma), lemma))
+    return [x[2] for x in sorted(scored)[:limit]]
