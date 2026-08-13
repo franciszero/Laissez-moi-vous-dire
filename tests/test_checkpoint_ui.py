@@ -593,6 +593,49 @@ def test_l33_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
             db_path.unlink()
 
 
+def test_checkpoint_answer_bold_is_rendered_not_shown_as_asterisks(tmp_path):
+    """答案里的 **加粗** 要真的加粗，星号不能露给学习者。
+
+    card_overrides 从 L33 起就用 **…** 标重点，但答案渲染只做 HTML 转义、不解析
+    markdown，星号一直原样显示在卡面上。这里按用户看到的结果断言，不断言实现。
+    """
+    db_path = Path("dictation.db")
+    backup_path = tmp_path / "dictation.db.bak"
+    if db_path.exists():
+        shutil.copy2(db_path, backup_path)
+
+    try:
+        cards = manifest.checkpoints(manifest.load("../L36/manifest.json"))
+        # 防止空断言：这一课必须真的有卡片在答案里用了 **…**
+        assert any("**" in str(c.get("back") or "") for c in cards)
+
+        at = AppTest.from_file("app.py", default_timeout=10)
+        at.run()
+        at.selectbox(key="sel_lesson").set_value("L36").run()
+
+        knowledge_button = next(
+            b for b in at.button if b.label.startswith("📝 知识点（")
+        )
+        knowledge_button.click().run()
+        assert not at.exception
+
+        # 第一张是机判卡，随便提交一个答案就能揭示背面
+        at.text_input(key="cp_ans").set_value("peu importe").run()
+        next(b for b in at.button if b.label == "提交").click().run()
+        assert not at.exception
+
+        answer_html = next(
+            m.value for m in at.markdown if "checkpoint-answer" in m.value
+        )
+        assert "**" not in answer_html, "答案里的星号漏到页面上了"
+        assert "<strong" in answer_html, "答案里的重点没有被加粗"
+    finally:
+        if backup_path.exists():
+            shutil.copy2(backup_path, db_path)
+        elif db_path.exists():
+            db_path.unlink()
+
+
 def test_l36_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
     """新课写入 vocab/manifest 后，应能在侧栏选课并进入知识点 deck。"""
     db_path = Path("dictation.db")

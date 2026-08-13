@@ -2045,6 +2045,10 @@ def _checkpoint_title(card: dict) -> str:
 def _format_answer_inline(text: str) -> str:
     """把知识点答案里的重点接口、代词、提示词做成富文本。"""
     out = html.escape(text)
+    # card_overrides 里的答案一直用 **…** 标重点（L33 起四课都这么写），但这里只做 HTML
+    # 转义、不解析 markdown，星号就原样露给学习者了。放在转义之后、注入其它标签之前转成
+    # <strong>：此时 out 里还没有我们自己的尖括号，不会误伤。
+    out = re.sub(r"\*\*(.+?)\*\*", r"<strong class='answer-bold'>\1</strong>", out)
     for phrase in ("先诊断", "判断顺序", "核心区别", "注意", "重要边界", "基础位置", "常用顺序"):
         out = out.replace(phrase, f"<strong class='answer-key'>{phrase}</strong>")
     out = re.sub(
@@ -2070,6 +2074,7 @@ CHECKPOINT_ANSWER_CSS = "\n".join(
         ".checkpoint-answer .answer-gap{height:.35rem;}",
         ".checkpoint-answer .answer-num,.checkpoint-answer .answer-dot{font-weight:750;color:#5b21b6;margin-right:.28rem;}",
         ".checkpoint-answer .answer-key{font-weight:800;color:#9d174d;}",
+        ".checkpoint-answer .answer-bold{font-weight:800;}",
         ".checkpoint-answer .answer-fr{font-family:Georgia,'Times New Roman',serif;font-weight:700;color:#0f766e;}",
         ".checkpoint-answer u{text-decoration-thickness:2px;text-underline-offset:3px;color:#7c2d12;}",
         "</style>",
@@ -2225,7 +2230,11 @@ def render_checkpoint_panel() -> None:
         "掌握": ["" for _ in cards],
     }
     if show_answers:
-        data["答案"] = [" ".join(str(c.get("back") or "").split())[:120] for c in cards]
+        # 表格是纯文本单元格，加不了粗，所以直接把 **…** 的星号剥掉，别让它露在表里。
+        data["答案"] = [
+            " ".join(re.sub(r"\*\*(.+?)\*\*", r"\1", str(c.get("back") or "")).split())[:120]
+            for c in cards
+        ]
     df = pd.DataFrame(data)
 
     def _style(row):
