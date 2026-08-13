@@ -593,6 +593,79 @@ def test_l33_lesson_is_visible_and_checkpoint_deck_starts(tmp_path):
             db_path.unlink()
 
 
+def _load_answer_renderer():
+    """用 ast 静态取出答案渲染函数，**不 import app**。
+
+    docs/BACKLOG.md §7：裸 import 会在 pytest 进程里把 app.py 整个跑一遍（含写库），
+    后面 AppTest 起的用例会连环失败。这里只把需要的几个函数定义抠出来 exec。
+    """
+    import ast
+    import html as html_mod
+    import re as re_mod
+
+    want = {"_strip_answer_markup", "_format_answer_inline", "_checkpoint_answer_html"}
+    tree = ast.parse(Path("app.py").read_text("utf-8"))
+    picked = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in want]
+    assert {n.name for n in picked} == want, "app.py 里的答案渲染函数改名了"
+    ns = {"re": re_mod, "html": html_mod, "CHECKPOINT_ANSWER_CSS": ""}
+    exec(compile(ast.Module(body=picked, type_ignores=[]), "app.py", "exec"), ns)
+    return ns["_checkpoint_answer_html"]
+
+
+def test_every_lesson_answer_renders_as_closed_html_without_markup_leaking():
+    """全库体检：每张知识卡的答案都要渲染成闭合的 HTML，且不漏 markdown 记号。
+
+    答案里的 **加粗** 和 `词形` 记号是数据带进来的（L33 起 900+ 张卡里 600+ 张在用），
+    单张卡的用例盯不住。真出过的问题有两类：
+      1. 记号不解析，星号/反引号原样显示给学习者；
+      2. 解析之后，"de + …" 那条下划线正则一路吞掉注入的标签，
+         生成 <u>de + x</strong></u> 这种交错嵌套（实测 20 张卡中招）。
+    """
+    from html.parser import HTMLParser
+
+    render = _load_answer_renderer()
+
+    class Balance(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.stack, self.errors = [], []
+
+        def handle_starttag(self, tag, attrs):
+            if tag not in ("br", "hr", "img"):
+                self.stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if not self.stack:
+                self.errors.append(f"多出闭合 </{tag}>")
+            elif self.stack[-1] != tag:
+                self.errors.append(f"嵌套错位：期望 </{self.stack[-1]}>，实际 </{tag}>")
+                self.stack.pop()
+            else:
+                self.stack.pop()
+
+    problems = []
+    marked = 0
+    for mf in sorted(Path("..").glob("L*/manifest.json")):
+        for card in manifest.checkpoints(manifest.load(str(mf))):
+            back = str(card.get("back") or "")
+            if not back:
+                continue
+            if "**" in back or "`" in back:
+                marked += 1
+            out = render(card)
+            checker = Balance()
+            checker.feed(out)
+            if checker.errors or checker.stack:
+                problems.append(f"{mf.parent.name}/{card.get('id')}: {checker.errors or checker.stack}")
+            if "**" in out:
+                problems.append(f"{mf.parent.name}/{card.get('id')}: 渲染结果里还有 **")
+            if re.search(r"(?<!<)`", out):
+                problems.append(f"{mf.parent.name}/{card.get('id')}: 渲染结果里还有反引号")
+
+    assert marked > 0, "没有一张卡用 ** 或 ` 记号，这个体检就是空的"
+    assert not problems, "答案渲染有问题：\n" + "\n".join(problems[:10])
+
+
 def test_checkpoint_answer_bold_is_rendered_not_shown_as_asterisks(tmp_path):
     """答案里的 **加粗** 要真的加粗，星号不能露给学习者。
 
