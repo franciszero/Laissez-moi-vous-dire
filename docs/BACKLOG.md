@@ -7,7 +7,7 @@
 改完某条就从这里删掉，并在提交说明里写清楚。新增条目要带**证据**（命令、数字、文件行号），
 只写"感觉不好"的条目会被后来人忽略。
 
-最后更新：2026-08-12
+最后更新：2026-08-13
 
 ---
 
@@ -142,3 +142,68 @@ python3 -m pytest -q tests/test_writing_ui.py::test_layout_has_editor_and_word_c
 没定位到根因（可能是 session_state 里存着的轮次快照，也可能是 cache_data 本身）。
 在此之前：**改完课程数据要验证真实 8501 时，默认重启 streamlit**，别指望热更新。
 注意重启会打断正在用 8501 的人。
+
+---
+
+## 9. 从 `vocab.json` 撤掉的词不会从 `dictation.db` 消失
+
+**状态**：已确认，等决定怎么处理。
+
+`store.py:20` 的 `import_vocab_into_db()` 是**只插不删**：
+
+```python
+for lemma in vocab:
+    try:
+        cur.execute("INSERT INTO words (text, created_at) VALUES (?, ?)", (lemma, _now()))
+    except sqlite3.IntegrityError:
+        pass          # 已存在就跳过——但「已删除」没人管
+```
+
+它在 `app.py:1148`（按文件签名全量导入）和 `app.py:1413`（自定义词表）两处被调用。
+结果是：**一个词只要进过一次库，就永远留在库里**，哪怕它后来被证明是听错的。
+课程数据是 append-only 的语义，学习库却不是。
+
+实测（2026-08-13，HEAD=5b631a8）：
+
+```bash
+python3 - <<'PY'
+import json, glob, sqlite3
+lemmas = set()
+for f in glob.glob('../L*/vocab.json'):
+    lemmas |= {r['lemma'] for r in json.load(open(f, encoding='utf-8'))}
+c = sqlite3.connect('dictation.db')
+rows = list(c.execute('SELECT id,text,wrong_count,correct_streak,last_seen_at FROM words'))
+print(len(lemmas), len(rows))
+for r in rows:
+    if r[1] not in lemmas:
+        print(r)
+PY
+```
+
+vocab.json 共 1462 个 lemma，`words` 表 1467 行，**5 行在任何 vocab.json 里都找不到**
+（也都不在 `words.txt` 的 58 行里）：
+
+| id | text | 错次 | 连对 | 最后练习 |
+|---:|---|---:|---:|---|
+| 153 | `l'Afghanistan` | 1 | 0 | 2026-06-11 |
+| 158 | `la Mer du Nord` | 0 | 0 | — |
+| 204 | `les medias` | 2 | 5 | 2026-06-16 |
+| 842 | `la pilule` | 1 | 0 | 2026-07-18 |
+| 1274 | `un essai` | 0 | 0 | — |
+
+`un essai` 是最能说明问题的一条：L35 上线时两路 ASR 都听成 `essai`，后来老师自己的
+听写词单上只有 `essayer`、没有 `essai`，词条据此撤掉了——**但库里这行还在**。
+`les medias` 更糟，已经练了 7 次（错 2 连对 5），也就是说**学习者真的在背一个已经被撤回的词**。
+
+危害不是崩溃，是安静地跑偏：孤儿词不属于任何一课，所以选课练习抽不到它，
+但全库搜词、「全部」入口、词库统计都还带着它。撤词越多，库越脏。
+
+**改法**（没动，因为要先定策略）：
+
+- 保守：导入后报告一次「库里有 N 个词不在任何 vocab.json 里」，只提示不删；
+- 彻底：给 `words` 加一列来源，导入时把「来自 vocab.json 但已消失」的标 `hidden=1`
+  （**不能硬删**——`les medias` 那种有练习记录的，删了就丢 SRS 历史）。
+
+短期人工处置：确认某行确实是撤回产物且 `wrong_count=0`、无 `attempts` 引用时，
+可以直接 `DELETE`；有练习记录的建议标 `hidden=1` 而不是删。
+2026-08-13 L36 撤 `la protection` 时就是这么处理的（0 次练习，直接删，删前备份 db）。
