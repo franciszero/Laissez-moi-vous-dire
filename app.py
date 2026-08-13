@@ -291,6 +291,7 @@ _PROVENANCE_ACTION_LABELS = {
     "word_family": "同词族扩展",
     "review": "复习回顾",
     "user_supplied": "课后材料补充",
+    "agent_supplement": "补充词（老师未要求）",
 }
 
 

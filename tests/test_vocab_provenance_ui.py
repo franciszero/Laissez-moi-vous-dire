@@ -59,3 +59,43 @@ def test_every_l31_word_has_structured_provenance():
 
     assert len(rows) == 117
     assert all(row.get("provenance") for row in rows)
+
+
+def test_every_real_teacher_action_has_a_chinese_label():
+    """真实词表体检：每种 teacher_action 都得有中文标签。
+
+    没有映射时 app 会原样显示英文键名（`agent_supplement` 曾经这样露了 106 次），
+    「教学关系」那一行就从人话退化成内部字段名——不报错、不崩，只是难看且看不懂。
+    单测盯不住这个，因为新的 teacher_action 是数据带进来的，不是代码写出来的。
+
+    这里用 ast 静态读 app.py 的字面量，**不 import app**：裸 import 会在 pytest 进程里
+    把 app.py 整个跑一遍（含写库），后面 AppTest 起的写作用例会连环失败。
+    """
+    import ast
+    import glob
+
+    tree = ast.parse(Path("app.py").read_text("utf-8"))
+    labels = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(
+            isinstance(t, ast.Name) and t.id == "_PROVENANCE_ACTION_LABELS"
+            for t in node.targets
+        )
+    )
+
+    files = sorted(glob.glob(str(Path("..") / "L*" / "vocab.json")))
+    assert files, "没扫到任何 vocab.json，测试等于没跑"
+
+    used = {
+        record.get("teacher_action")
+        for f in files
+        for row in json.loads(Path(f).read_text("utf-8"))
+        for record in row.get("provenance", [])
+    }
+    missing = sorted(used - set(labels))
+    assert not missing, (
+        f"这些 teacher_action 没有中文标签，会在「教学关系」里露出英文键名：{missing}。"
+        f"把它们加进 app._PROVENANCE_ACTION_LABELS。"
+    )
