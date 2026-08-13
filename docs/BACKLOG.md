@@ -7,7 +7,7 @@
 改完某条就从这里删掉，并在提交说明里写清楚。新增条目要带**证据**（命令、数字、文件行号），
 只写"感觉不好"的条目会被后来人忽略。
 
-最后更新：2026-08-07
+最后更新：2026-08-12
 
 ---
 
@@ -100,7 +100,45 @@ pick_scenario   0 条        use_template   0 条        final_check   0 条
 
 - **Anki 制卡**：Docker 里跑着别的东西。开了之后查 L34 那 77 个老师层 lemma
   缺哪些卡、只补缺的（不生成带《补》的，省 quota）。
-- **阅读9 预抽词**：题目已在 `L34/doc/阅读/阅读9 练习.pdf`。约定是**等用户做完作业、
-  上课之前**再抽，全走《补》层——太早抽会剧透诊断信号，太晚抽则老师不会讲的词全漏。
+- ~~**阅读9 预抽词**~~ ✅ 已完成 2026-08-12：L35 上线时按约定抽了，60 条全走《补》层
+  （`[T9Qn 补]`），老师课上讲到的 8 条走老师要求档。**老师那份阅读9 笔记仍未到**，
+  到了要重跑一次归属：高亮的词从《补》升档时，老师证据**并进原有那条 provenance**，
+  不追加第二条（追加会让 `merge_vocab.py` 的等值去重失效，App 里「为什么收录这个词」
+  会重复渲染两次）。
 - **L33 的开课词 ∩ 阅读交叉核对**：做不了，L33 没有阅读证据文件。
-  （L34 补了 12 条、L31 补了 4 条、L32 补了 2 条，都已完成。）
+  （L35 补了 11 条 + 2 条 word_family、L34 补了 12 条、L31 补了 4 条、L32 补了 2 条，
+  都已完成。）
+
+---
+
+## 7. 测试里禁止裸 `import app`
+
+`app.py` 是 Streamlit 脚本，**import 的瞬间就整个执行一遍**——包括 1144–1148 行按
+文件签名往 `dictation.db` 导词。在 pytest 进程里裸 import 之后，后面用
+`AppTest.from_file("app.py")` 起的用例会连环失败：
+
+```bash
+# 实测（2026-08-12，HEAD=a770398）：测试里加一句 `from app import ...` 之后
+python3 -m pytest -q          # 21 failed, 232 passed, 4 errors
+python3 -m pytest -q tests/test_writing_ui.py::test_layout_has_editor_and_word_count  # 1 passed
+```
+
+单独跑全过、全量跑就炸，典型的共享状态污染。挂掉的全在
+`test_writing_app_entry.py` / `test_writing_ui.py` / `test_writing_entry_independent.py`。
+
+**要在测试里读 `app.py` 的模块级常量，用 `ast` 静态解析，别 import。**
+现成例子：`tests/test_vocab_provenance_ui.py::test_every_real_teacher_action_has_a_chinese_label`。
+
+## 8. `@st.cache_data` 的文件签名不保证失效
+
+`app.py:169` 的 `_file_signature()` 按 `st_mtime_ns + st_size` 做缓存键，理论上课程
+数据一改就失效。实测不可靠：2026-08-12 改完 `L35/vocab.json`（152→155 行）和
+`manifest.json`（45→50 张卡）之后，浏览器整页重载两次，侧栏仍显示旧的
+`开始这一课（152 词）` / `📝 知识点（45）`；**重启 streamlit 进程后立刻正确**。
+
+同一天早些时候新建 L35 时也一样：选课下拉框里根本搜不到 L35，重启才出现——
+说明课程**列表**也吃这个缓存。
+
+没定位到根因（可能是 session_state 里存着的轮次快照，也可能是 cache_data 本身）。
+在此之前：**改完课程数据要验证真实 8501 时，默认重启 streamlit**，别指望热更新。
+注意重启会打断正在用 8501 的人。
