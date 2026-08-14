@@ -18,6 +18,7 @@ import anki as anki_mod
 import macdict as macdict_mod
 import roundlogic
 import scan
+import scanaudio
 import matcher
 import mastery as mastery_mod
 import srs
@@ -1239,6 +1240,9 @@ def start_scan(lesson: str, word_ids: list[int]) -> None:
     st.session_state.scan_lesson = lesson
     st.session_state.scan_ids = list(word_ids)
     st.session_state.scan_page = 0
+    # 预热状态是**按课**的。不清掉的话，换一课进来会沿用上一课那份已经跑完的
+    # status，新课的发音就永远不会开始生成。
+    st.session_state.pop("scan_warm", None)
 
 
 def _writing_content():
@@ -1923,15 +1927,193 @@ def render_practice() -> None:
                     st.write(f"{mark} `{item['answer']}`    {item['created_at']}")
 
 
+_SCAN_COVER_STYLE = (
+    "cursor:pointer;filter:blur(5px);background:#f2f2f2;"
+    "border-radius:4px;padding:0 4px;transition:filter .12s"
+)
+
+
+def _scan_table_html(rows, direction: str, audio_urls: dict, rev: str) -> str:
+    """一页扫读表。被盖的格子打 class='scan-cover'，行为由注入脚本挂（见下）。
+
+    渲染和行为分开：这里只吐静态 HTML，所以能脱离浏览器单测。
+
+    rev 是「这是第几次渲染的哪一页」的令牌。停在最后一页连着提交两次时，
+    表格 HTML 一模一样，React 会复用同一批 DOM 节点，勾选状态就会留在上一次
+    —— 而 form 那边的隐藏输入已经清空了，两边对不上。同步脚本靠 rev 变化
+    识别出「这是新的一页」并清干净。
+    """
+    _skill, _open, covered, play_locked = scan.DIRECTIONS[direction]
+    head = (
+        "<tr>"
+        "<td style='width:36px;color:#999;font-size:.78em;padding:2px 0'>#</td>"
+        "<td style='width:32px'></td>"
+        "<td style='color:#999;font-size:.78em;padding:2px 0'>法语</td>"
+        "<td style='color:#999;font-size:.78em;padding:2px 0'>中文</td>"
+        "<td style='width:48px;color:#999;font-size:.78em;text-align:right'>不会</td>"
+        "</tr>"
+    )
+    body = ""
+    for r in rows:
+        url = audio_urls.get(r["word_id"], "")
+        if url:
+            lock = " data-locked='1'" if play_locked else ""
+            play = (
+                f"<span class='scan-play' data-no='{r['no']}'"
+                f" data-src='{html.escape(url, quote=True)}'{lock}"
+                f" style='cursor:pointer;color:#1a7f37'>▶</span>"
+            )
+        else:
+            play = "<span style='color:#ccc' title='这个词的发音还没生成好'>▶</span>"
+
+        cells = {}
+        for field in ("fr", "zh"):
+            safe = html.escape(r[field])
+            if field in covered:
+                cells[field] = (
+                    f"<span class='scan-cover' data-no='{r['no']}'"
+                    f" style='{_SCAN_COVER_STYLE}'>{safe}</span>"
+                )
+            else:
+                cells[field] = safe
+
+        body += (
+            f"<tr data-no='{r['no']}'>"
+            f"<td style='color:#999;font-size:.82em;padding:6px 0'>{r['no']}</td>"
+            f"<td style='padding:6px 0'>{play}</td>"
+            f"<td style='padding:6px 0'>{cells['fr']}</td>"
+            f"<td style='padding:6px 0'>{cells['zh']}</td>"
+            f"<td style='padding:6px 0;text-align:right'>"
+            f"<input type='checkbox' class='scan-miss' data-no='{r['no']}'></td>"
+            "</tr>"
+        )
+    return (
+        f"<table class='scan-table' data-rev='{html.escape(rev, quote=True)}' "
+        "style='border-collapse:collapse;width:100%;font-size:15px'>"
+        f"{head}{body}</table>"
+    )
+
+
+def _scan_behavior_script(reveal: str) -> str:
+    """盖/揭与逐词播放的行为脚本。
+
+    走 components.html 注入、操作 window.parent.document —— 和
+    focus_answer_input / wire_form_enter_submit 同一套手法。全部在浏览器端
+    完成，一次 rerun 都不产生。
+    """
+    return """
+    <script>
+    (function () {
+      const doc = window.parent.document;
+      const mode = "%s";
+      function uncover(el) {
+        el.style.filter = "none";
+        el.style.background = "transparent";
+        const tr = el.closest("tr");
+        if (tr) tr.dataset.revealed = "1";
+      }
+      function cover(el) {
+        el.style.filter = "blur(5px)";
+        el.style.background = "#f2f2f2";
+      }
+      function bind() {
+        // 不要加「已挂过就跳过」的守卫。提交会触发 rerun，rerun 之后必须重新挂；
+        // S0 实测确认了这一点。下面全部用 el.onclick = ... 赋值挂载，重复挂只是
+        // 覆盖同一个函数，不会叠加，所以本来也不需要守卫。
+        const table = doc.querySelector(".scan-table");
+        if (!table) return false;
+        table.querySelectorAll(".scan-cover").forEach(function (el) {
+          if (mode === "hover") {
+            el.onmouseenter = function () { uncover(el); };
+            el.onmouseleave = function () { cover(el); };
+          } else if (mode === "click") {
+            el.onclick = function () { uncover(el); };
+          }
+        });
+        table.querySelectorAll(".scan-play").forEach(function (el) {
+          el.onclick = function () {
+            const tr = el.closest("tr");
+            if (el.dataset.locked === "1" && !(tr && tr.dataset.revealed)) return;
+            new (window.parent.Audio)(el.dataset.src).play();
+          };
+        });
+        const all = doc.querySelector(".scan-reveal-all");
+        if (all) all.onclick = function () {
+          table.querySelectorAll(".scan-cover").forEach(uncover);
+        };
+        return true;
+      }
+      if (!bind()) { setTimeout(bind, 50); setTimeout(bind, 200); }
+    })();
+    </script>
+    """ % reveal
+
+
 def render_scan_view() -> None:
-    """速过：整页扫读。B3 补表格、B4 补提交、B5 补接慢流程。"""
+    """速过：整页扫读。B4 补提交、B5 补接慢流程。"""
     ids = st.session_state.scan_ids
-    pages = scan.paginate(ids, int(load_setting("scan_page_size", 20)))
+    page_size = int(load_setting("scan_page_size", 20))
+    pages = scan.paginate(ids, page_size)
     page_no = min(st.session_state.scan_page, max(0, len(pages) - 1))
     st.session_state.scan_page = page_no
 
     st.subheader(f"⚡ 速过 · {st.session_state.scan_lesson}")
     st.caption(f"共 {len(ids)} 词 · 第 {page_no + 1}/{max(1, len(pages))} 页")
+
+    c_dir, c_rev = st.columns(2)
+    direction = c_dir.selectbox(
+        "方向", list(scan.DIRECTIONS),
+        index=list(scan.DIRECTIONS).index(load_setting("scan_direction", "看法→想中")),
+        key="scan_direction_sel",
+    )
+    reveal_labels = {"click": "点行显形", "hover": "悬停显形", "page": "整页一次揭晓"}
+    reveal = c_rev.selectbox(
+        "揭法", list(reveal_labels),
+        index=list(reveal_labels).index(load_setting("scan_reveal", "click")),
+        format_func=lambda k: reveal_labels[k],
+        key="scan_reveal_sel",
+    )
+    save_setting("scan_direction", direction)
+    save_setting("scan_reveal", reveal)
+
+    if not pages:
+        st.info("这一课还没有词。")
+        if st.button("← 回到练习"):
+            _leave_overlays()
+            st.rerun()
+        return
+
+    page_ids = pages[page_no]
+    rows = scan.page_rows(
+        page_ids,
+        {r["id"]: r["text"] for r in get_words_by_ids(page_ids)},
+        {lemma: word_zh(lemma) for lemma in VOCAB},
+        start_no=page_no * max(1, page_size) + 1,
+    )
+
+    voice = st.session_state.get("scan_voice", "Thomas")
+    warm_status = st.session_state.get("scan_warm")
+    if warm_status is None:
+        warm_status = scanaudio.warm([r["text"] for r in get_words_by_ids(ids)], voice)
+        st.session_state.scan_warm = warm_status
+    if warm_status.get("running"):
+        st.caption(f"发音准备中 {warm_status['done']}/{warm_status['total']}"
+                   f"（不影响看法/看中两档）")
+
+    audio_urls = {}
+    for r in rows:
+        p = scanaudio.cache_path(r["fr"], voice)
+        if p.exists() and p.stat().st_size > 0:
+            audio_urls[r["word_id"]] = scanaudio.static_url(p)
+
+    rev = f"{page_no}-{st.session_state.get('scan_rev', 0)}"
+    st.markdown(_scan_table_html(rows, direction, audio_urls, rev), unsafe_allow_html=True)
+    if reveal == "page":
+        st.markdown(
+            "<button class='scan-reveal-all' type='button'>揭晓这一页</button>",
+            unsafe_allow_html=True,
+        )
+    components.html(_scan_behavior_script(reveal), height=0, width=0)
 
     if st.button("← 回到练习"):
         _leave_overlays()
