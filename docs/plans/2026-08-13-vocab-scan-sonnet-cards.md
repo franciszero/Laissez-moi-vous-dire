@@ -1008,6 +1008,11 @@ def _button(at, startswith):
     raise AssertionError(f"没找到以 {startswith!r} 开头的按钮：{[b.label for b in at.button]}")
 
 
+def _peek(at, key):
+    """AppTest 的 SafeSessionState 没有 .get()——属性访问会被当成 key 查找。"""
+    return at.session_state[key] if key in at.session_state else None
+
+
 def test_sidebar_has_scan_entry():
     at = _run()
     b = _button(at, "⚡ 速过")
@@ -1017,12 +1022,10 @@ def test_sidebar_has_scan_entry():
 def test_scan_does_not_disturb_the_word_round():
     """速过是独立 overlay，绝不许碰逐词状态机。"""
     at = _run()
-    before = (at.session_state.get("pool"), at.session_state.get("current_word"),
-              at.session_state.get("index"))
+    before = (_peek(at, "pool"), _peek(at, "current_word"), _peek(at, "index"))
     _button(at, "⚡ 速过").click().run()
     assert at.session_state["scan_active"] is True
-    after = (at.session_state.get("pool"), at.session_state.get("current_word"),
-             at.session_state.get("index"))
+    after = (_peek(at, "pool"), _peek(at, "current_word"), _peek(at, "index"))
     assert after == before
 
 
@@ -1033,15 +1036,25 @@ def test_scan_closes_other_overlays():
     at.run()
     _button(at, "⚡ 速过").click().run()
     assert at.session_state["cp_active"] is False
-    assert at.session_state.get("writing_active") is None
+    assert "writing_active" not in at.session_state
 
 
 def test_leaving_scan_returns_to_practice():
     at = _run()
     _button(at, "⚡ 速过").click().run()
     _button(at, "← 回到练习").click().run()
-    assert at.session_state.get("scan_active") is None
+    # _leave_overlays 弹掉 scan_active，下一轮的初始化块把它重建成 False
+    # （和 cp_active 一个套路）。所以这里查的是 False，不是 None。
+    assert at.session_state["scan_active"] is False
 ```
+
+> **两个坑，别照老写法改回去**（2026-08-13 执行时实测）：
+> 1. `AppTest.session_state` 是 `SafeSessionState`，**没有 `.get()`**——写
+>    `at.session_state.get("pool")` 会抛 `AttributeError: get not found in session_state`，
+>    因为属性访问被当成 key 查找了。只能用 `in` + `[]`。
+> 2. `scan_active` 被 `_leave_overlays()` 弹掉之后，**下一轮的初始化块会立刻把它
+>    重建成 `False`**，所以断言 `is None` 永远不成立。`writing_active` 不同：
+>    它从不在初始化块里出现，弹掉就是真的没有，所以那条用 `not in`。
 
 - [ ] **Step 2: 跑测试确认失败**
 
