@@ -17,6 +17,7 @@ import vocab as vocab_mod
 import anki as anki_mod
 import macdict as macdict_mod
 import roundlogic
+import scan
 import matcher
 import mastery as mastery_mod
 import srs
@@ -1193,6 +1194,12 @@ if "cp_active" not in st.session_state:   # 「📝 知识点」是独立流程�
     st.session_state.cp_index = 0
     st.session_state.cp_show_back = False
 
+if "scan_active" not in st.session_state:  # 「⚡ 速过」同样是独立流程，和逐词状态机零共享
+    st.session_state.scan_active = False
+    st.session_state.scan_lesson = ""
+    st.session_state.scan_ids = []
+    st.session_state.scan_page = 0
+
 if "llm_loaded" not in st.session_state:  # 本地模型生命周期（AI 产出卡按需加载、闲置卸载）
     st.session_state.llm_loaded = False
     st.session_state.llm_last_active = 0.0
@@ -1223,6 +1230,15 @@ def _leave_overlays() -> None:
     st.session_state.pop("llm_error", None)
     st.session_state.cp_active = False
     st.session_state.pop("writing_active", None)   # 写作视图同属覆盖层
+    st.session_state.pop("scan_active", None)      # 速过同属覆盖层
+
+
+def start_scan(lesson: str, word_ids: list[int]) -> None:
+    """进入速过。只写 scan_* 这几个 key，逐词状态机一个都不碰。"""
+    st.session_state.scan_active = True
+    st.session_state.scan_lesson = lesson
+    st.session_state.scan_ids = list(word_ids)
+    st.session_state.scan_page = 0
 
 
 def _writing_content():
@@ -1348,6 +1364,14 @@ with st.sidebar:
         _leave_overlays()
         save_setting("last_lesson", chosen_lesson)
         _start_cards(_cards, f"知识点 · {chosen_lesson}", chosen_lesson)
+        st.rerun()
+
+    _scan_pool = _lesson_ids(chosen_lesson, LESSONS)
+    if st.button(f"⚡ 速过（{len(_scan_pool)}）", disabled=not _scan_pool,
+                 use_container_width=True):
+        _leave_overlays()
+        save_setting("last_lesson", chosen_lesson)
+        start_scan(chosen_lesson, _scan_pool)
         st.rerun()
 
     st.caption("错词=做错过的；到期=顶部按遗忘曲线提醒；变形=有阴阳性的词；"
@@ -1897,6 +1921,21 @@ def render_practice() -> None:
                 for item in history:
                     mark = "✅" if item["is_correct"] else "❌"
                     st.write(f"{mark} `{item['answer']}`    {item['created_at']}")
+
+
+def render_scan_view() -> None:
+    """速过：整页扫读。B3 补表格、B4 补提交、B5 补接慢流程。"""
+    ids = st.session_state.scan_ids
+    pages = scan.paginate(ids, int(load_setting("scan_page_size", 20)))
+    page_no = min(st.session_state.scan_page, max(0, len(pages) - 1))
+    st.session_state.scan_page = page_no
+
+    st.subheader(f"⚡ 速过 · {st.session_state.scan_lesson}")
+    st.caption(f"共 {len(ids)} 词 · 第 {page_no + 1}/{max(1, len(pages))} 页")
+
+    if st.button("← 回到练习"):
+        _leave_overlays()
+        st.rerun()
 
 
 def render_search_panel():
@@ -2706,6 +2745,8 @@ _show_card = bool(_selected) and not st.session_state.get("hide_preview", False)
 
 if st.session_state.get("writing_active"):
     render_writing_view()
+elif st.session_state.get("scan_active"):
+    render_scan_view()
 elif st.session_state.get("cp_active"):
     render_checkpoint()
 else:
