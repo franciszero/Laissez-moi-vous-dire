@@ -290,7 +290,7 @@ enableStaticServing = true
 | 音频还没预热完 | 该行 ▶ 置灰，页面顶部显示进度；不阻塞扫读 |
 | 某词没有中文释义 | 中文格显示 `（无释义）`，仍可标「不会」 |
 | 本课词数为 0 | 入口按钮 disabled，和「错词（0）」「变形（0）」一致 |
-| 提交时 word_id 不在库 | `record_scan_attempt` 静默跳过（对齐 `record_attempt` 里 `if not row: return` 的既有处理） |
+| 提交时 word_id 不在库 | 照插不误。`record_attempt` 是先插 `attempts` 再查 `words`，不存在的 id 同样会留下一条记录——扫读保持一致行为，不另立规矩 |
 | 隐藏词（`hidden=1`） | 不进扫读池，和其他练习一致 |
 
 ## 9. 测试
