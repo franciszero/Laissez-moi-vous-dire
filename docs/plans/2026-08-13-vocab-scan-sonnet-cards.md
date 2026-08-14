@@ -324,7 +324,7 @@ def parse_missed(raw) -> set[int]:
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `python3 -m pytest tests/test_scan.py -v`
-Expected: 11 passed
+Expected: 10 passed
 
 - [ ] **Step 5: 全量回归**
 
