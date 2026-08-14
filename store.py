@@ -411,3 +411,40 @@ def get_card_requested_words() -> list[dict]:
     ).fetchall()
     conn.close()
     return [{"id": r[0], "text": r[1]} for r in rows]
+
+
+# ---------- 扫读（速过）的自判记录 ----------
+# 扫读只回答「认不认得」，没有拼写证据。所以它写 attempts，但**绝不**更新
+# words 的 SRS 状态：app.record_attempt 会改 correct_streak / interval_days /
+# due_at / wrong_count，而那份状态是每个词一份、所有技能共用的——让无证据的
+# 自判去改它，等于用手滑抹掉打字练出来的成绩。
+# 另外 mastery.mastery_score 按天聚合时取「当天第一次」，早上扫读漏一个词就会
+# 把这一整天钉成错，晚上打字打对也救不回来。所以隔离必须在写入这一层做死。
+
+SCAN_SKILLS = ("rec_meaning", "rec_produce", "rec_audio")
+
+
+def record_scan_page(results, skill: str) -> int:
+    """一页扫读结果批量入库。results: [(word_id, 是否算会), ...]。返回写入条数。
+
+    skill 必须是 SCAN_SKILLS 之一；拿有证据的技能名调用会直接抛错，
+    避免有人图省事用它绕过 words 的 SRS 更新。
+    """
+    if skill not in SCAN_SKILLS:
+        raise ValueError(f"record_scan_page 只接受 {SCAN_SKILLS}，收到 {skill!r}")
+    rows = list(results)
+    if not rows:
+        return 0
+    now = _now()
+    conn = get_conn()
+    conn.executemany(
+        "INSERT INTO attempts (word_id, answer, is_correct, created_at, skill) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [
+            (wid, "（扫读·会）" if ok else "（扫读·不会）", 1 if ok else 0, now, skill)
+            for wid, ok in rows
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return len(rows)
