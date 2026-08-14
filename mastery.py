@@ -58,6 +58,12 @@ BASE_SKILLS = ("transcribe", "produce", "meaning", "pron")
 # 听写(音→拼写) / 产出(意→拼写) / 理解(法→意) / 音(发音)，每个词都适用
 SKILLS = BASE_SKILLS + ("morph",)           # 变(阴阳性变形)：仅有阴性的词适用
 
+# 认(扫读自判)：认得出/想得起来，但没有拼写证据。三个方向分开记，因为
+# 「看法语想中文」比「看中文想法语」容易得多，混成一个会被简单的那一档拉高。
+# 故意不进 BASE_SKILLS——overall() 是「适用技能里最弱那项」，让无证据的自判
+# 参与总掌握度，会把打字练出来的成绩虚高或虚低。
+REC_SKILLS = ("rec_meaning", "rec_produce", "rec_audio")
+
 
 def skill_scores(attempts):
     """attempts: [(is_correct, created_at, skill)]。返回 {skill: 掌握度}。"""

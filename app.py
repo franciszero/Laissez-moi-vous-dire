@@ -1951,7 +1951,8 @@ def render_word_panel():
         return None
     st.markdown("**📋 词表**")
     st.caption(
-        "听=听写(听法语写法语)、产=产出(看/听中文写法语)、义=理解(听法语写中文)、音=发音、变=阴阳性变形，"
+        "听=听写(听法语写法语)、产=产出(看/听中文写法语)、义=理解(听法语写中文)、音=发音、变=阴阳性变形、"
+        "认=扫读自判(速过里自己判会不会，没有拼写证据，不参与「词」列)，"
         "各列按掌握度上色（灰→黄→绿）；「词」列底色=适用维度里最弱。词前 ▶=当前词、✅/❌=本轮结果（法+中模式是两个标记，前法后中）；"
         "🙈+灰行=已隐藏（不进练习）。点任一词 → 主区可「隐藏 / 恢复」。"
     )
@@ -1990,6 +1991,7 @@ def render_word_panel():
             "义": ["" for _ in rows],
             "音": ["" for _ in rows],
             "变": ["" for _ in rows],
+            "认": ["" for _ in rows],
             "翻译": [word_zh(r["text"]) for r in rows],
             "状态": ["已隐藏" if r["id"] in hidden_ids else "" for r in rows],
         }
@@ -2009,13 +2011,19 @@ def render_word_panel():
             "义": mastery_mod.mastery_color(sc.get("meaning", 0.0)),
             "音": mastery_mod.mastery_color(sc.get("pron", 0.0)),
             "变": mastery_mod.mastery_color(sc.get("morph", 0.0)) if has_fem else "#f5f5f5",
+            "认": mastery_mod.mastery_color(
+                mastery_mod.overall(sc, skills=mastery_mod.REC_SKILLS)
+            ),
         }
         return [
             f"background-color:{cmap[c]}; color:#1a1a1a" if c in cmap else ""
             for c in row.index
         ]
 
-    cols = ["词", "听", "产", "义", "音", "变", "翻译", "状态"] if show_trans else ["词", "听", "产", "义", "音", "变", "状态"]
+    cols = (
+        ["词", "听", "产", "义", "音", "变", "认", "翻译", "状态"] if show_trans
+        else ["词", "听", "产", "义", "音", "变", "认", "状态"]
+    )
     event = st.dataframe(
         df.style.apply(_style, axis=1),
         column_order=cols,
