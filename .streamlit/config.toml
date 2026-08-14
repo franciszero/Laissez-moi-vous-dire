@@ -5,3 +5,7 @@ toolbarMode = "viewer"
 [theme]
 # 写作资料区需要在有限高度里多行阅读，全局根字号从默认 16px 收到 14px
 baseFontSize = 14
+
+[server]
+# 扫读的逐词发音走静态文件，点 ▶ 不经过 Streamlit（见 scanaudio.py）
+enableStaticServing = true

@@ -15,3 +15,6 @@ dictation.db
 
 # Streamlit 机密（若有）
 .streamlit/secrets.toml
+
+# 扫读的发音缓存（本地生成，按需重建）
+static/
