@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import subprocess
 import threading
@@ -49,7 +50,10 @@ def ensure(lemma: str, voice: str) -> Path:
     if path.exists() and path.stat().st_size > 0:
         return path
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".part")
+    # 临时名必须按进程+线程唯一。同一个词可能被两条路同时生成（连着换两次课时
+    # 新旧预热线程重叠、或者多开一个浏览器标签），共用 ".part" 会让先完成的那条
+    # 把文件搬走，后完成的那条 rename 时找不到源文件而抛 FileNotFoundError。
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
     try:
         subprocess.run(
             ["say", "-v", voice, lemma, "-o", str(tmp),
@@ -77,13 +81,18 @@ def warm(lemmas, voice: str) -> dict:
     status = {"total": len(items), "done": 0, "failed": 0, "running": True}
 
     def run() -> None:
-        for lemma in items:
-            try:
-                ensure(lemma, voice)
-            except AudioUnavailable:
-                status["failed"] += 1
-            status["done"] += 1
-        status["running"] = False
+        # catch 得宽是故意的：一个词出意外不能把整条预热线程打死。线程一死，
+        # status["running"] 就永远停在 True，页面会一直显示「发音准备中」，
+        # 而这一课剩下的词再也不会生成。宁可记一次 failed 继续往下走。
+        try:
+            for lemma in items:
+                try:
+                    ensure(lemma, voice)
+                except Exception:
+                    status["failed"] += 1
+                status["done"] += 1
+        finally:
+            status["running"] = False
 
     thread = threading.Thread(target=run, daemon=True, name="scanaudio-warm")
     status["thread"] = thread

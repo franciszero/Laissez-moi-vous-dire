@@ -99,6 +99,62 @@ def test_warm_reports_progress_and_survives_failures(tmp_path, monkeypatch):
     assert status["running"] is False
 
 
+def test_concurrent_ensure_of_the_same_lemma_does_not_explode(tmp_path, monkeypatch):
+    """两条路同时生成同一个词（换课时新旧预热线程重叠、或多开一个标签），
+    共用 ".part" 会让后完成那条 rename 时抛 FileNotFoundError。"""
+    _redirect(tmp_path, monkeypatch)
+    import threading
+
+    gate = threading.Barrier(2, timeout=10)
+
+    def slow_say(cmd, **kw):
+        out = pathlib.Path(cmd[cmd.index("-o") + 1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"fake")
+        gate.wait()          # 两条线程都写完 .part 之后再各自去 rename
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(scanaudio.subprocess, "run", slow_say)
+    errors = []
+
+    def worker():
+        try:
+            scanaudio.ensure("composer", "Thomas")
+        except Exception as exc:      # noqa: BLE001 —— 就是要抓住任何异常
+            errors.append(exc)
+
+    ts = [threading.Thread(target=worker) for _ in range(2)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(timeout=15)
+    assert errors == []
+    assert scanaudio.cache_path("composer", "Thomas").exists()
+    assert list((tmp_path / "audio").glob("*.part")) == []
+
+
+def test_warm_survives_an_unexpected_exception(tmp_path, monkeypatch):
+    """一个词出意外不许打死整条预热线程——线程一死 running 就永远是 True，
+    页面会一直卡在「发音准备中」，剩下的词再也不生成。"""
+    _redirect(tmp_path, monkeypatch)
+
+    def boom_on_one(cmd, **kw):
+        if cmd[3] == "boom":
+            raise RuntimeError("非 AudioUnavailable 的意外")
+        out = pathlib.Path(cmd[cmd.index("-o") + 1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"fake")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(scanaudio.subprocess, "run", boom_on_one)
+    status = scanaudio.warm(["a", "boom", "c"], "Thomas")
+    status["thread"].join(timeout=10)
+    assert status["running"] is False
+    assert status["done"] == 3          # 没被中途打死
+    assert status["failed"] == 1
+    assert scanaudio.cache_path("c", "Thomas").exists()   # boom 之后的词照样生成
+
+
 def test_static_url(tmp_path, monkeypatch):
     _redirect(tmp_path, monkeypatch)
     p = scanaudio.cache_path("la confiture", "Thomas")
