@@ -2185,6 +2185,18 @@ def render_scan_view() -> None:
             st.session_state.scan_page = page_no + 1
         st.rerun()
 
+    missed_ids = st.session_state.get("scan_missed_last") or []
+    if missed_ids:
+        st.divider()
+        if st.button(f"把这 {len(missed_ids)} 个漏掉的用「{mode_name}」练一遍",
+                     type="primary"):
+            _leave_overlays()
+            reset_round(missed_ids, st.session_state.get("batch_size_round", 10))
+            st.session_state.round_lesson = st.session_state.scan_lesson
+            st.session_state.round_label = f"速过漏词 · {st.session_state.scan_lesson}"
+            st.session_state.pop("scan_missed_last", None)
+            st.rerun()
+
     if st.button("← 回到练习"):
         _leave_overlays()
         st.rerun()
