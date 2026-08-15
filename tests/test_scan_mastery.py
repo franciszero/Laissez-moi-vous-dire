@@ -40,4 +40,6 @@ def test_skill_scores_isolates_scan_from_typed_skills():
     ]
     scores = mastery.skill_scores(attempts)
     assert scores["meaning"] > 0.0
-    assert scores["rec_meaning"] == 0.0
+    # 不能写 == 0.0：wilson_lower(0, t) 数学上是 0，浮点算出来是 ~1e-17，
+    # 而 t = 0.5^(age/14) 随当前时刻变，等式有时成立有时不成立（flaky）。
+    assert scores["rec_meaning"] == pytest.approx(0.0, abs=1e-9)
