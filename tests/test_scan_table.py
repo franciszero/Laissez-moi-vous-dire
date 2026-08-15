@@ -85,6 +85,14 @@ def test_rev_token_reaches_the_table():
     assert "data-rev='3-7'" in fn(rows, "看法→想中", {}, "3-7")
 
 
+def test_cover_is_a_block_so_it_can_actually_be_clicked():
+    """内联 span 遇到两行中文时，中心点落在行间距里，elementFromPoint 返回 <td>，
+    真人点单元格正中会点空。撑成 inline-block + width:100% 才点得中。"""
+    style = _load_app_fns()["_SCAN_COVER_STYLE"]
+    assert "display:inline-block" in style
+    assert "width:100%" in style
+
+
 def test_behavior_script_covers_three_modes():
     fn = _load_app_fns()["_scan_behavior_script"]
     for mode in ("click", "hover", "page"):

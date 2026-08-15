@@ -46,6 +46,7 @@ from store import (
     set_card_requested,
     is_card_requested,
     get_card_requested_words,
+    record_scan_page,
 )
 
 ZH_VOICE = "Tingting"  # macOS 中文嗓音（听/看中文模式用）
@@ -1927,7 +1928,12 @@ def render_practice() -> None:
                     st.write(f"{mark} `{item['answer']}`    {item['created_at']}")
 
 
+# display:inline-block + width:100% 不是为了好看，是为了点得中。
+# 内联 span 遇到两行中文时，bounding rect 是两行的并集，中心点落在行间距里——
+# 那一点上 elementFromPoint 返回的是 <td>，真人点单元格正中会点空。
+# 撑成块之后整个单元格都是命中区，hover 模式也跟着变好用。
 _SCAN_COVER_STYLE = (
+    "display:inline-block;width:100%;box-sizing:border-box;"
     "cursor:pointer;filter:blur(5px);background:#f2f2f2;"
     "border-radius:4px;padding:0 4px;transition:filter .12s"
 )
@@ -2049,6 +2055,49 @@ def _scan_behavior_script(reveal: str) -> str:
     """ % reveal
 
 
+def _scan_sync_script() -> str:
+    """把行内勾选同步进 form 里那个隐藏 text_input。
+
+    写 React 受控组件的值必须走 native setter 再派发 input 事件，直接赋
+    .value 不会被 React 看见。这条通路由 S0 卡在真实浏览器里验证过。
+    """
+    return """
+    <script>
+    (function () {
+      const doc = window.parent.document;
+      function setInput(el, value) {
+        const proto = window.parent.HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
+        el.dispatchEvent(new (window.parent.Event)("input", {bubbles: true}));
+      }
+      function bind() {
+        const table = doc.querySelector(".scan-table");
+        const boxes = doc.querySelectorAll(".scan-miss");
+        const sink = doc.querySelector(".st-key-scan_missed input");
+        if (!table || !boxes.length || !sink) return false;
+        // 新的一页（含「停在最后一页又提交一次」）：把上一页留下的勾清干净。
+        // 裸 HTML 的 checkbox 不归 React 管，clear_on_submit 碰不到它们。
+        const rev = table.dataset.rev || "";
+        if (sink.dataset.scanRev !== rev) {
+          sink.dataset.scanRev = rev;
+          boxes.forEach(function (b) { b.checked = false; });
+          setInput(sink, "");
+        }
+        boxes.forEach(function (b) {
+          b.onchange = function () {
+            const on = [...doc.querySelectorAll(".scan-miss")]
+              .filter(x => x.checked).map(x => x.dataset.no);
+            setInput(sink, on.join(","));
+          };
+        });
+        return true;
+      }
+      if (!bind()) { setTimeout(bind, 50); setTimeout(bind, 200); }
+    })();
+    </script>
+    """
+
+
 def render_scan_view() -> None:
     """速过：整页扫读。B4 补提交、B5 补接慢流程。"""
     ids = st.session_state.scan_ids
@@ -2107,13 +2156,34 @@ def render_scan_view() -> None:
             audio_urls[r["word_id"]] = scanaudio.static_url(p)
 
     rev = f"{page_no}-{st.session_state.get('scan_rev', 0)}"
-    st.markdown(_scan_table_html(rows, direction, audio_urls, rev), unsafe_allow_html=True)
-    if reveal == "page":
-        st.markdown(
-            "<button class='scan-reveal-all' type='button'>揭晓这一页</button>",
-            unsafe_allow_html=True,
+    # 不要用 clear_on_submit：它只清得掉 Streamlit 自己的隐藏输入，清不掉表格里
+    # 那些裸 HTML 的 checkbox，两边会对不上。清理统一交给同步脚本按 rev 做。
+    with st.form(f"scan_form_{page_no}"):
+        st.markdown(_scan_table_html(rows, direction, audio_urls, rev), unsafe_allow_html=True)
+        if reveal == "page":
+            st.markdown(
+                "<button class='scan-reveal-all' type='button'>揭晓这一页</button>",
+                unsafe_allow_html=True,
+            )
+        missed_raw = st.text_input(
+            "missed", key="scan_missed", label_visibility="collapsed"
         )
+        submitted = st.form_submit_button("记下这一页 ▶", type="primary")
     components.html(_scan_behavior_script(reveal), height=0, width=0)
+    components.html(_scan_sync_script(), height=0, width=0)
+
+    if submitted:
+        skill = scan.DIRECTIONS[direction][0]
+        missed = scan.parse_missed(missed_raw)
+        results = scan.commit(rows, missed)
+        record_scan_page(results, skill)
+        st.session_state.scan_missed_last = [
+            wid for wid, ok in results if not ok
+        ]
+        st.session_state.scan_rev = st.session_state.get("scan_rev", 0) + 1
+        if page_no + 1 < len(pages):
+            st.session_state.scan_page = page_no + 1
+        st.rerun()
 
     if st.button("← 回到练习"):
         _leave_overlays()
