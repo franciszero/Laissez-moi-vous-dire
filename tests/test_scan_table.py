@@ -5,18 +5,18 @@ import pathlib
 
 
 def _load_app_fns():
-    """只取 app.py 里的两个纯函数，不执行整个脚本（docs/BACKLOG.md 第 7 条）。
+    """只取 app.py 里那几个纯函数，不执行整个脚本（docs/BACKLOG.md 第 7 条）。
 
-    做法：把源码解析成 AST，挑出这两个函数定义单独 exec。
+    做法：把源码解析成 AST，挑出这几个函数定义单独 exec。
     """
     import ast
 
     src = pathlib.Path("app.py").read_text("utf-8")
     tree = ast.parse(src)
-    wanted = {"_scan_table_html", "_scan_behavior_script"}
+    wanted = {"_scan_table_html", "_scan_behavior_script", "_saved_index"}
     fns = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]
-    assert {n.name for n in fns} == wanted, "app.py 里没找到这两个函数"
-    # 这两个函数还用到模块级的 _SCAN_* 常量，不一起搬过来 exec 时会 NameError。
+    assert {n.name for n in fns} == wanted, f"app.py 里缺函数：{wanted - {n.name for n in fns}}"
+    # 它们还用到模块级的 _SCAN_* 常量，不一起搬过来 exec 时会 NameError。
     consts = [
         n for n in tree.body
         if isinstance(n, ast.Assign)
@@ -99,3 +99,14 @@ def test_behavior_script_covers_three_modes():
         out = fn(mode)
         assert f'"{mode}"' in out
         assert "window.parent.document" in out
+
+
+def test_saved_index_falls_back_instead_of_exploding():
+    """持久化的选择过期时（改过名字/换过版本），不许让 list.index() 抛
+    ValueError 把整个速过视图崩掉。"""
+    fn = _load_app_fns()["_saved_index"]
+    opts = ["看法→想中", "看中→想法", "听音→想双"]
+    assert fn(opts, "看中→想法", "看法→想中") == 1        # 存的还在，用它
+    assert fn(opts, "已经改名的旧值", "听音→想双") == 2   # 存的没了，退到默认
+    assert fn(opts, None, None) == 0                       # 默认也没了，退到第一项
+    assert fn([], "x", "y") == 0                           # 选项空了也不炸

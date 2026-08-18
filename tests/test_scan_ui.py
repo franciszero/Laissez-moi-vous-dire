@@ -54,3 +54,24 @@ def test_leaving_scan_returns_to_practice():
     # _leave_overlays 弹掉 scan_active，下一轮的初始化块把它重建成 False
     # （和 cp_active 一个套路）。所以这里查的是 False，不是 None。
     assert at.session_state["scan_active"] is False
+
+
+def test_stale_saved_setting_does_not_break_the_scan_view():
+    """真实场景：以前存过一个方向名，后来改了名字。旧值还躺在 app_state 里，
+    一进速过 list.index() 就抛 ValueError。这条守住兜底真的接上了。"""
+    import store
+
+    old_dir = store.load_setting("scan_direction", None)
+    old_rev = store.load_setting("scan_reveal", None)
+    try:
+        store.save_setting("scan_direction", "这个方向已经不存在了")
+        store.save_setting("scan_reveal", "nope")
+        at = _run()
+        _button(at, "⚡ 速过").click().run()
+        assert not at.exception, [e.message for e in at.exception]
+        assert at.session_state["scan_active"] is True
+    finally:
+        if old_dir is not None:
+            store.save_setting("scan_direction", old_dir)
+        if old_rev is not None:
+            store.save_setting("scan_reveal", old_rev)

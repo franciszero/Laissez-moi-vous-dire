@@ -1,6 +1,27 @@
 from __future__ import annotations
 
+import pytest
 from streamlit.testing.v1 import AppTest
+
+import store
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_saved_round():
+    """还原存档轮次。
+
+    app.py 每次渲染结束都会 `if pool: persist_round()`——这些用例一旦把 pool
+    撑起来，就会把用户真正在练的那一轮冲掉，还会让后面的用例在启动时「续上」
+    别人的轮次。整个套件的结果因此依赖 dictation.db 的持久化状态。
+    """
+    before = store.load_round()
+    try:
+        yield
+    finally:
+        if before is None:
+            store.clear_round()
+        else:
+            store.save_round(before)
 
 
 def _run():

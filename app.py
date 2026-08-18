@@ -1928,6 +1928,16 @@ def render_practice() -> None:
                     st.write(f"{mark} `{item['answer']}`    {item['created_at']}")
 
 
+def _saved_index(options, saved, default) -> int:
+    """持久化的选择可能已经不在选项里——改过方向/揭法的名字、或者换了版本。
+    读不回来就退到默认，再不行退到第一项。绝不让一个过期的旧设置把整个视图
+    崩掉（list.index() 找不到会抛 ValueError，一进速过就白屏）。"""
+    for candidate in (saved, default):
+        if candidate in options:
+            return list(options).index(candidate)
+    return 0
+
+
 # display:inline-block + width:100% 不是为了好看，是为了点得中。
 # 内联 span 遇到两行中文时，bounding rect 是两行的并集，中心点落在行间距里——
 # 那一点上 elementFromPoint 返回的是 <td>，真人点单元格正中会点空。
@@ -2112,13 +2122,15 @@ def render_scan_view() -> None:
     c_dir, c_rev = st.columns(2)
     direction = c_dir.selectbox(
         "方向", list(scan.DIRECTIONS),
-        index=list(scan.DIRECTIONS).index(load_setting("scan_direction", "看法→想中")),
+        index=_saved_index(list(scan.DIRECTIONS),
+                           load_setting("scan_direction", "看法→想中"), "看法→想中"),
         key="scan_direction_sel",
     )
     reveal_labels = {"click": "点行显形", "hover": "悬停显形", "page": "整页一次揭晓"}
     reveal = c_rev.selectbox(
         "揭法", list(reveal_labels),
-        index=list(reveal_labels).index(load_setting("scan_reveal", "click")),
+        index=_saved_index(list(reveal_labels),
+                           load_setting("scan_reveal", "click"), "click"),
         format_func=lambda k: reveal_labels[k],
         key="scan_reveal_sel",
     )
@@ -2165,8 +2177,11 @@ def render_scan_view() -> None:
                 "<button class='scan-reveal-all' type='button'>揭晓这一页</button>",
                 unsafe_allow_html=True,
             )
+        # 故意不藏：勾上面的框会自动填进来，但它同时是逃生口——万一注入的
+        # 同步脚本没挂上（Streamlit 升级改了 DOM 结构），你还能直接手打序号提交。
         missed_raw = st.text_input(
-            "missed", key="scan_missed", label_visibility="collapsed"
+            "想不起来的序号（勾上面的框会自动填，也可以手打，逗号分隔）",
+            key="scan_missed",
         )
         submitted = st.form_submit_button("记下这一页 ▶", type="primary")
     components.html(_scan_behavior_script(reveal), height=0, width=0)
