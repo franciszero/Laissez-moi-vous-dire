@@ -207,3 +207,39 @@ vocab.json 共 1462 个 lemma，`words` 表 1467 行，**5 行在任何 vocab.js
 短期人工处置：确认某行确实是撤回产物且 `wrong_count=0`、无 `attempts` 引用时，
 可以直接 `DELETE`；有练习记录的建议标 `hidden=1` 而不是删。
 2026-08-13 L36 撤 `la protection` 时就是这么处理的（0 次练习，直接删，删前备份 db）。
+
+---
+
+## 9. 整个测试套件的结果依赖 dictation.db 里持久化的轮次
+
+**状态**：已确认，机制清楚，只堵住了当前的入口，没有根治。
+
+`app.py` 每次渲染结束都会 `if st.session_state.get("pool"): persist_round()`。
+任何用 `AppTest` 且把 `pool` 撑起来的用例，都会把**存档轮次**写进 `dictation.db`，
+而后面新起的 `AppTest` 在启动时会 `load_round()` 把它「续上」——于是用例之间
+通过磁盘互相传染。
+
+**实测**（2026-08-13 加 `tests/test_word_panel.py` 时）：
+
+```
+第一次全量：2 failed, 313 passed
+  FAILED tests/test_card_request_ui.py::test_requested_word_shows_in_sidebar_and_can_be_cancelled
+  FAILED tests/test_llm_ui.py::test_production_ai_requires_user_verdict_before_srs
+隔离重跑这两条：5 passed
+再跑一次全量：315 passed
+```
+
+两条都不是被改坏的——是**存档在运行途中被改变**的那一次才翻车，等存档稳定下来
+就又绿了。也就是说这个套件有一类只在「存档状态发生迁移」时出现的假红。
+
+**已做的**：`tests/test_word_panel.py` 和 `tests/test_scan_handoff.py` 各加了一个
+autouse fixture `_keep_the_saved_round()`，跑完还原（原来没有存档就 `clear_round()`）。
+
+**没做的**（根治方案，等有空再定）：
+
+- 最省事：加一个 `tests/conftest.py`，把还原做成全局 autouse，所有用例自动免疫；
+- 更彻底：让 `AppTest` 系的用例跑在临时 `DB_PATH` 上，不碰真实的 `dictation.db`
+  （现在 `test_scan_store.py` 已经是这么做的，但 UI 用例还在用真库）。
+
+**给后来人**：新写的 UI 用例只要会让 `pool` 非空，就必须带上还原，否则会把用户
+真正在练的那一轮存档冲掉——这不只是测试问题，是会丢用户状态的。
