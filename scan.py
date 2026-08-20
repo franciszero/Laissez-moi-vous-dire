@@ -65,3 +65,31 @@ def parse_missed(raw) -> set[int]:
         if chunk.isdigit():
             out.add(int(chunk))
     return out
+
+
+def parse_ops(raw) -> list[tuple]:
+    """把键盘回传串解析成有序的操作列表。
+
+    格式：逗号分隔，每项二选一——
+      "<word_id>:1"  → ("mark", word_id, True)     会
+      "<word_id>:0"  → ("mark", word_id, False)    不会
+      "U:<word_id>"  → ("undo", word_id, None)     撤销该词最近一条扫读记录
+
+    **顺序必须保留、重复不许去掉**：服务端记「已处理到第几条」做增量写入，
+    动了顺序或条数就会重写或漏写。
+
+    脏值静默丢弃——这串是从浏览器来的，宁可少记一条，也不能让一次提交整个炸掉。
+    """
+    out: list[tuple] = []
+    for chunk in (raw or "").replace(" ", "").split(","):
+        if not chunk:
+            continue
+        head, sep, tail = chunk.partition(":")
+        if not sep:
+            continue
+        if head == "U":
+            if tail.isdigit():
+                out.append(("undo", int(tail), None))
+        elif head.isdigit() and tail in ("0", "1"):
+            out.append(("mark", int(head), tail == "1"))
+    return out

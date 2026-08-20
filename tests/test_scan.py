@@ -82,3 +82,39 @@ def test_scan_module_is_pure():
         elif isinstance(node, ast.ImportFrom) and node.module:
             names.add(node.module.split(".")[0])
     assert not (names & {"streamlit", "sqlite3", "app"})
+
+
+def test_parse_ops_reads_marks_and_undos_in_order():
+    assert scan.parse_ops("1201:1,1202:0,U:1202,1202:1") == [
+        ("mark", 1201, True),
+        ("mark", 1202, False),
+        ("undo", 1202, None),
+        ("mark", 1202, True),
+    ]
+
+
+def test_parse_ops_keeps_duplicates():
+    """同一个词表两次是合法的（改判后重表），不许去重——服务端靠顺序增量写。"""
+    assert scan.parse_ops("7:1,7:1") == [("mark", 7, True), ("mark", 7, True)]
+
+
+def test_parse_ops_drops_garbage_silently():
+    """这串从浏览器来，宁可少记一条，也不能让整页的提交炸掉。"""
+    assert scan.parse_ops("") == []
+    assert scan.parse_ops(None) == []
+    assert scan.parse_ops(",,") == []
+    assert scan.parse_ops("nocolon") == []
+    assert scan.parse_ops("abc:1") == []          # word_id 不是数字
+    assert scan.parse_ops("12:2") == []           # 判定不是 0/1
+    assert scan.parse_ops("12:") == []            # 判定缺失
+    assert scan.parse_ops("U:abc") == []          # 撤销目标不是数字
+    assert scan.parse_ops("U") == []              # 撤销没带目标
+    assert scan.parse_ops("-3:1") == []           # 负号不是 isdigit
+
+
+def test_parse_ops_survives_a_dirty_item_in_the_middle():
+    assert scan.parse_ops("1:1,junk,2:0") == [("mark", 1, True), ("mark", 2, False)]
+
+
+def test_parse_ops_tolerates_spaces():
+    assert scan.parse_ops(" 1:1 , U:1 ") == [("mark", 1, True), ("undo", 1, None)]
