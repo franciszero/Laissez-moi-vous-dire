@@ -107,3 +107,89 @@ def test_scan_attempts_are_visible_to_mastery(tmp_path, monkeypatch):
     got = store.get_attempts_for_words([wid])
     assert wid in got
     assert any(a[2] == "rec_meaning" for a in got[wid])
+
+
+def _raw_attempt(db, word_id, skill, answer, is_correct=1):
+    """直接插一条 attempts，用来造「非扫读记录」这种对照组。"""
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "INSERT INTO attempts (word_id, answer, is_correct, created_at, skill) "
+        "VALUES (?,?,?,?,?)",
+        (word_id, answer, is_correct, "2026-08-20T10:00:00", skill),
+    )
+    conn.commit()
+    conn.close()
+
+
+def _attempts(db):
+    conn = sqlite3.connect(db)
+    rows = conn.execute("SELECT skill, answer FROM attempts ORDER BY id").fetchall()
+    conn.close()
+    return rows
+
+
+def test_delete_removes_only_the_last_scan_attempt(tmp_path, monkeypatch):
+    db = _fresh_db(tmp_path, monkeypatch)
+    wid = _seed_word(db)
+    store.record_scan_page([(wid, True)], "rec_meaning")
+    store.record_scan_page([(wid, False)], "rec_meaning")
+    assert store.delete_last_scan_attempt(wid, "rec_meaning") == 1
+    assert _attempts(db) == [("rec_meaning", "（扫读·会）")]      # 只剩第一条
+
+
+def test_delete_never_touches_typed_history(tmp_path, monkeypatch):
+    """这是本卡最要紧的一条：打字练出来的记录一条都不许被删到。"""
+    db = _fresh_db(tmp_path, monkeypatch)
+    wid = _seed_word(db)
+    _raw_attempt(db, wid, "produce", "chien")          # 打字练的
+    _raw_attempt(db, wid, "rec_meaning", "chien")      # skill 对但不是扫读格式
+    assert store.delete_last_scan_attempt(wid, "rec_meaning") == 0
+    assert _attempts(db) == [("produce", "chien"), ("rec_meaning", "chien")]
+
+
+def test_delete_is_scoped_to_the_given_skill(tmp_path, monkeypatch):
+    db = _fresh_db(tmp_path, monkeypatch)
+    wid = _seed_word(db)
+    store.record_scan_page([(wid, True)], "rec_meaning")
+    store.record_scan_page([(wid, True)], "rec_produce")
+    assert store.delete_last_scan_attempt(wid, "rec_meaning") == 1
+    assert _attempts(db) == [("rec_produce", "（扫读·会）")]
+
+
+def test_delete_is_scoped_to_the_given_word(tmp_path, monkeypatch):
+    db = _fresh_db(tmp_path, monkeypatch)
+    a = _seed_word(db, "la confiture")
+    b = _seed_word(db, "s'installer")
+    store.record_scan_page([(a, True)], "rec_meaning")
+    assert store.delete_last_scan_attempt(b, "rec_meaning") == 0
+    assert len(_attempts(db)) == 1
+
+
+def test_delete_still_leaves_words_row_untouched(tmp_path, monkeypatch):
+    """v1 的核心不变量继续守：扫读这条路无论增删都不碰 words 的 SRS 状态。"""
+    db = _fresh_db(tmp_path, monkeypatch)
+    wid = _seed_word(db)
+    store.record_scan_page([(wid, False)], "rec_produce")
+    conn = sqlite3.connect(db)
+    before = conn.execute("SELECT * FROM words WHERE id = ?", (wid,)).fetchone()
+    conn.close()
+
+    store.delete_last_scan_attempt(wid, "rec_produce")
+
+    conn = sqlite3.connect(db)
+    after = conn.execute("SELECT * FROM words WHERE id = ?", (wid,)).fetchone()
+    conn.close()
+    assert after == before
+
+
+def test_delete_on_nothing_is_a_quiet_zero(tmp_path, monkeypatch):
+    db = _fresh_db(tmp_path, monkeypatch)
+    wid = _seed_word(db)
+    assert store.delete_last_scan_attempt(wid, "rec_audio") == 0
+
+
+def test_delete_rejects_non_scan_skill(tmp_path, monkeypatch):
+    _fresh_db(tmp_path, monkeypatch)
+    for bad in ("produce", "transcribe", "meaning", "pron", "morph", ""):
+        with pytest.raises(ValueError):
+            store.delete_last_scan_attempt(1, bad)

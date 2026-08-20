@@ -448,3 +448,34 @@ def record_scan_page(results, skill: str) -> int:
     conn.commit()
     conn.close()
     return len(rows)
+
+
+def delete_last_scan_attempt(word_id: int, skill: str) -> int:
+    """撤销一条扫读自判（键盘流里按 ↑ 改判用）。返回删掉的条数（0 或 1）。
+
+    为什么必须真删、不能再插一条覆盖：mastery.mastery_score 按天聚合时取的是
+    「当天第一次」（`if cur is None or dt < cur[1]`）。手滑按错之后再插一条正确
+    的，这一天仍然按错的那条算——改判会静默失效。
+
+    删除范围三条同时满足才动手：
+      1. skill 必须在 SCAN_SKILLS 里；
+      2. 只看该 word_id + 该 skill；
+      3. answer 必须以「（扫读·」开头。
+    打字、念法语、变形练出来的历史一条都碰不到。**任何放宽都是事故。**
+    """
+    if skill not in SCAN_SKILLS:
+        raise ValueError(f"delete_last_scan_attempt 只接受 {SCAN_SKILLS}，收到 {skill!r}")
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT id FROM attempts "
+        "WHERE word_id = ? AND skill = ? AND answer LIKE '（扫读·%' "
+        "ORDER BY id DESC LIMIT 1",
+        (word_id, skill),
+    ).fetchone()
+    if row is None:
+        conn.close()
+        return 0
+    conn.execute("DELETE FROM attempts WHERE id = ?", (row[0],))
+    conn.commit()
+    conn.close()
+    return 1
