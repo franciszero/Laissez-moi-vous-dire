@@ -83,3 +83,19 @@ def test_ops_are_sent_cumulatively():
     """连按时单条格式会被覆盖丢判定，必须整串重发。"""
     out = _script("看法→想中", True)
     assert 'ops.join(",")' in out
+
+
+def test_advance_is_not_deferred_behind_the_flash_animation():
+    """K5 实测：为了播闪色而把 advance 推迟 160ms，连按三下 ← 会得到
+    "1275:1,1275:1,1275:1"——同一个词记三遍、后面两个词整个跳过。
+    表态必须立刻前进，闪的是刚离开的那一行。"""
+    out = _script("看法→想中", True)
+    assert "setTimeout(advance" not in out
+
+
+def test_focus_is_reclaimed_after_every_full_rerun():
+    """K5 实测两个坑：用鼠标换完方向，焦点留在 selectbox 里，焦点让路会让键盘
+    整个失灵；翻页是脚本点隐藏按钮触发的，点完焦点落在按钮上，而按钮能被空格
+    激活——空格是播放键，一按就会再翻一页。"""
+    out = _script("看法→想中", True)
+    assert "activeElement" in out and ".blur()" in out

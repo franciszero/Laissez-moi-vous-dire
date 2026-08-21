@@ -2046,7 +2046,7 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
         return;
       }
       const sink = doc.querySelector(".st-key-scan_sink input");
-      const flushBtn = doc.querySelector(".st-key-scan_flush button");
+      const flushBtn = doc.querySelector(".st-key-scan_sink_box button");
       const nextBtn = doc.querySelector(".st-key-scan_next_page button");
       const receipt = () => doc.querySelector("#scan-receipt");
 
@@ -2126,11 +2126,16 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
         })();
       }
       function mark(ok) {
-        ops.push(wid(cursor) + ":" + (ok ? "1" : "0"));
-        marked.add(cursor);
+        // 立刻前进。别为了播闪色而把 advance 推迟——在那段延迟里再按一次，
+        // 标记的还是同一个词。K5 实测：连按三下 ← 得到 "1275:1,1275:1,1275:1"，
+        // 光标一步没动，后面两个词被整个跳过。闪的是刚离开的那一行，
+        // 视觉反馈和光标彻底解耦。
+        const i = cursor;
+        ops.push(wid(i) + ":" + (ok ? "1" : "0"));
+        marked.add(i);
         flush();
-        flash(cursor, ok);
-        setTimeout(advance, 160);
+        flash(i, ok);
+        if (i + 1 < rows.length) setCursor(i + 1); else turnPage();
       }
       function back() {
         const prev = cursor - 1;
@@ -2169,6 +2174,14 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
       doc.__scanKb = onKey;
       doc.addEventListener("keydown", onKey, true);
 
+      // 每次完整 rerun 之后把焦点收回来。不收的话有两个坑：
+      // 1) 用鼠标换完方向，焦点留在 selectbox 里，焦点让路会让键盘整个失灵，
+      //    用户看到的是「换了个方向键盘就死了」；
+      // 2) 翻页是脚本点隐藏按钮触发的，点完焦点落在那个按钮上，而按钮能被
+      //    空格激活——空格是播放键，一按就会再翻一页。
+      const act = doc.activeElement;
+      if (act && act !== doc.body && act.blur) act.blur();
+
       rows.forEach(function (tr, i) {
         const p = tr.querySelector(".scan-play");
         if (p) p.onclick = function () { play(i); };
@@ -2188,8 +2201,16 @@ def _scan_sink(skill: str) -> None:
     光标位置、揭晓状态、待发的 ops 全都活在浏览器端，表格一重建就全丢了。
     实测 fragment 重跑约 85ms，写一条库 0.36ms。
     """
-    raw = st.text_input("scan_sink", key="scan_sink", label_visibility="collapsed")
-    if st.button("flush", key="scan_flush"):
+    # 必须包在 st.form 里。裸的 st.text_input 只在失焦或回车时才把值发回服务端，
+    # 用 native setter 改值只更新了前端 React 状态，服务端拿到的还是旧值——K5 真机
+    # 实测就是这么翻车的：sink 里明明是 "1275:1,246:0"，库里一条没有。
+    # 表单提交会把当前所有 widget 值一起带上，这条路 S0 卡验证过。
+    with st.container(key="scan_sink_box"):
+        with st.form("scan_sink_form", clear_on_submit=False):
+            raw = st.text_input("scan_sink", key="scan_sink",
+                                label_visibility="collapsed")
+            flushed = st.form_submit_button("flush")
+    if flushed:
         ops = scan.parse_ops(raw)
         done = int(st.session_state.get("scan_written", 0))
         missed = st.session_state.setdefault("scan_missed_last", [])
@@ -2288,7 +2309,7 @@ def render_scan_view() -> None:
 
     # sink / flush / 翻页三个元素只是给脚本用的通道，藏起来
     st.markdown(
-        "<style>.st-key-scan_sink,.st-key-scan_flush,"
+        "<style>.st-key-scan_sink_box,"
         ".st-key-scan_next_page{display:none}</style>",
         unsafe_allow_html=True,
     )

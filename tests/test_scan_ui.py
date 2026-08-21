@@ -90,7 +90,12 @@ def _scan_attempts(word_ids):
 
 
 def _flush(at, raw):
-    """模拟键盘脚本：把累积串写进 sink，再点 flush。"""
+    """模拟键盘脚本：把累积串写进 sink，再提交那个表单。
+
+    sink 必须在 st.form 里——裸的 st.text_input 只在失焦或回车时才把值发回
+    服务端，用 native setter 改值只更新前端 React 状态。K5 真机实测就是这么
+    翻车的：sink 里明明是 "1275:1,246:0"，库里一条没有。
+    """
     at.session_state["scan_sink"] = raw
     at.run()
     _button(at, "flush").click().run()
