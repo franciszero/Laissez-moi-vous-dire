@@ -1942,45 +1942,56 @@ def _saved_index(options, saved, default) -> int:
 # 内联 span 遇到两行中文时，bounding rect 是两行的并集，中心点落在行间距里——
 # 那一点上 elementFromPoint 返回的是 <td>，真人点单元格正中会点空。
 # 撑成块之后整个单元格都是命中区，hover 模式也跟着变好用。
+# display:inline-block + width:100% 不是为了好看，是为了点得中。
+# 内联 span 遇到两行中文时，bounding rect 是两行的并集，中心点落在行间距里——
+# 那一点上 elementFromPoint 返回的是 <td>，真人点单元格正中会点空。
 _SCAN_COVER_STYLE = (
     "display:inline-block;width:100%;box-sizing:border-box;"
-    "cursor:pointer;filter:blur(5px);background:#f2f2f2;"
+    "filter:blur(5px);background:#f2f2f2;"
     "border-radius:4px;padding:0 4px;transition:filter .12s"
 )
 
+# 播放键在每一行都渲染，但只有当前行可见。这样光标移动时脚本只需翻一个样式，
+# 不用凭空造 DOM；视觉上仍然只有一个大按钮，不会退回 v1 那种 20 个 9px 小目标。
+_SCAN_PLAY_STYLE = (
+    "display:inline-block;width:40px;height:32px;line-height:32px;"
+    "text-align:center;cursor:pointer;font-size:18px"
+)
 
-def _scan_table_html(rows, direction: str, audio_urls: dict, rev: str) -> str:
-    """一页扫读表。被盖的格子打 class='scan-cover'，行为由注入脚本挂（见下）。
+
+def _scan_table_html(rows, direction: str, audio_urls: dict, cursor: int) -> str:
+    """一页扫读表。当前行带 data-current='1'，行为全部由键盘脚本挂。
 
     渲染和行为分开：这里只吐静态 HTML，所以能脱离浏览器单测。
-
-    rev 是「这是第几次渲染的哪一页」的令牌。停在最后一页连着提交两次时，
-    表格 HTML 一模一样，React 会复用同一批 DOM 节点，勾选状态就会留在上一次
-    —— 而 form 那边的隐藏输入已经清空了，两边对不上。同步脚本靠 rev 变化
-    识别出「这是新的一页」并清干净。
+    服务端总是把光标画在第 0 行；之后的移动由浏览器端接管，不再回服务端。
     """
     _skill, _open, covered, play_locked = scan.DIRECTIONS[direction]
     head = (
         "<tr>"
         "<td style='width:36px;color:#999;font-size:.78em;padding:2px 0'>#</td>"
-        "<td style='width:32px'></td>"
+        "<td style='width:44px'></td>"
         "<td style='color:#999;font-size:.78em;padding:2px 0'>法语</td>"
         "<td style='color:#999;font-size:.78em;padding:2px 0'>中文</td>"
-        "<td style='width:48px;color:#999;font-size:.78em;text-align:right'>不会</td>"
         "</tr>"
     )
     body = ""
-    for r in rows:
+    for i, r in enumerate(rows):
+        current = i == cursor
         url = audio_urls.get(r["word_id"], "")
+        vis = "" if current else "visibility:hidden;"
         if url:
             lock = " data-locked='1'" if play_locked else ""
             play = (
                 f"<span class='scan-play' data-no='{r['no']}'"
                 f" data-src='{html.escape(url, quote=True)}'{lock}"
-                f" style='cursor:pointer;color:#1a7f37'>▶</span>"
+                f" style='{vis}{_SCAN_PLAY_STYLE};color:#1a7f37'>&#9654;</span>"
             )
         else:
-            play = "<span style='color:#ccc' title='这个词的发音还没生成好'>▶</span>"
+            play = (
+                f"<span class='scan-play scan-play-dead' data-no='{r['no']}'"
+                f" title='这个词的发音还没生成好'"
+                f" style='{vis}{_SCAN_PLAY_STYLE};color:#ccc'>&#9654;</span>"
+            )
 
         cells = {}
         for field in ("fr", "zh"):
@@ -1993,123 +2004,26 @@ def _scan_table_html(rows, direction: str, audio_urls: dict, rev: str) -> str:
             else:
                 cells[field] = safe
 
+        mark = " data-current='1'" if current else ""
+        bg = "background:#eef5ff;" if current else ""
         body += (
-            f"<tr data-no='{r['no']}'>"
+            f"<tr class='scan-row' data-no='{r['no']}' data-wid='{r['word_id']}'{mark}"
+            f" style='{bg}transition:background .12s'>"
             f"<td style='color:#999;font-size:.82em;padding:6px 0'>{r['no']}</td>"
             f"<td style='padding:6px 0'>{play}</td>"
             f"<td style='padding:6px 0'>{cells['fr']}</td>"
             f"<td style='padding:6px 0'>{cells['zh']}</td>"
-            f"<td style='padding:6px 0;text-align:right'>"
-            f"<input type='checkbox' class='scan-miss' data-no='{r['no']}'></td>"
             "</tr>"
         )
     return (
-        f"<table class='scan-table' data-rev='{html.escape(rev, quote=True)}' "
+        "<table class='scan-table' "
         "style='border-collapse:collapse;width:100%;font-size:15px'>"
         f"{head}{body}</table>"
     )
 
 
-def _scan_behavior_script(reveal: str) -> str:
-    """盖/揭与逐词播放的行为脚本。
-
-    走 components.html 注入、操作 window.parent.document —— 和
-    focus_answer_input / wire_form_enter_submit 同一套手法。全部在浏览器端
-    完成，一次 rerun 都不产生。
-    """
-    return """
-    <script>
-    (function () {
-      const doc = window.parent.document;
-      const mode = "%s";
-      function uncover(el) {
-        el.style.filter = "none";
-        el.style.background = "transparent";
-        const tr = el.closest("tr");
-        if (tr) tr.dataset.revealed = "1";
-      }
-      function cover(el) {
-        el.style.filter = "blur(5px)";
-        el.style.background = "#f2f2f2";
-      }
-      function bind() {
-        // 不要加「已挂过就跳过」的守卫。提交会触发 rerun，rerun 之后必须重新挂；
-        // S0 实测确认了这一点。下面全部用 el.onclick = ... 赋值挂载，重复挂只是
-        // 覆盖同一个函数，不会叠加，所以本来也不需要守卫。
-        const table = doc.querySelector(".scan-table");
-        if (!table) return false;
-        table.querySelectorAll(".scan-cover").forEach(function (el) {
-          if (mode === "hover") {
-            el.onmouseenter = function () { uncover(el); };
-            el.onmouseleave = function () { cover(el); };
-          } else if (mode === "click") {
-            el.onclick = function () { uncover(el); };
-          }
-        });
-        table.querySelectorAll(".scan-play").forEach(function (el) {
-          el.onclick = function () {
-            const tr = el.closest("tr");
-            if (el.dataset.locked === "1" && !(tr && tr.dataset.revealed)) return;
-            new (window.parent.Audio)(el.dataset.src).play();
-          };
-        });
-        const all = doc.querySelector(".scan-reveal-all");
-        if (all) all.onclick = function () {
-          table.querySelectorAll(".scan-cover").forEach(uncover);
-        };
-        return true;
-      }
-      if (!bind()) { setTimeout(bind, 50); setTimeout(bind, 200); }
-    })();
-    </script>
-    """ % reveal
-
-
-def _scan_sync_script() -> str:
-    """把行内勾选同步进 form 里那个隐藏 text_input。
-
-    写 React 受控组件的值必须走 native setter 再派发 input 事件，直接赋
-    .value 不会被 React 看见。这条通路由 S0 卡在真实浏览器里验证过。
-    """
-    return """
-    <script>
-    (function () {
-      const doc = window.parent.document;
-      function setInput(el, value) {
-        const proto = window.parent.HTMLInputElement.prototype;
-        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
-        el.dispatchEvent(new (window.parent.Event)("input", {bubbles: true}));
-      }
-      function bind() {
-        const table = doc.querySelector(".scan-table");
-        const boxes = doc.querySelectorAll(".scan-miss");
-        const sink = doc.querySelector(".st-key-scan_missed input");
-        if (!table || !boxes.length || !sink) return false;
-        // 新的一页（含「停在最后一页又提交一次」）：把上一页留下的勾清干净。
-        // 裸 HTML 的 checkbox 不归 React 管，clear_on_submit 碰不到它们。
-        const rev = table.dataset.rev || "";
-        if (sink.dataset.scanRev !== rev) {
-          sink.dataset.scanRev = rev;
-          boxes.forEach(function (b) { b.checked = false; });
-          setInput(sink, "");
-        }
-        boxes.forEach(function (b) {
-          b.onchange = function () {
-            const on = [...doc.querySelectorAll(".scan-miss")]
-              .filter(x => x.checked).map(x => x.dataset.no);
-            setInput(sink, on.join(","));
-          };
-        });
-        return true;
-      }
-      if (!bind()) { setTimeout(bind, 50); setTimeout(bind, 200); }
-    })();
-    </script>
-    """
-
-
 def render_scan_view() -> None:
-    """速过：整页扫读。B4 补提交、B5 补接慢流程。"""
+    """速过：整页扫读，键盘驱动。K4 补键盘脚本与回传。"""
     ids = st.session_state.scan_ids
     page_size = int(load_setting("scan_page_size", 20))
     pages = scan.paginate(ids, page_size)
@@ -2119,23 +2033,13 @@ def render_scan_view() -> None:
     st.subheader(f"⚡ 速过 · {st.session_state.scan_lesson}")
     st.caption(f"共 {len(ids)} 词 · 第 {page_no + 1}/{max(1, len(pages))} 页")
 
-    c_dir, c_rev = st.columns(2)
-    direction = c_dir.selectbox(
+    direction = st.selectbox(
         "方向", list(scan.DIRECTIONS),
         index=_saved_index(list(scan.DIRECTIONS),
                            load_setting("scan_direction", "看法→想中"), "看法→想中"),
         key="scan_direction_sel",
     )
-    reveal_labels = {"click": "点行显形", "hover": "悬停显形", "page": "整页一次揭晓"}
-    reveal = c_rev.selectbox(
-        "揭法", list(reveal_labels),
-        index=_saved_index(list(reveal_labels),
-                           load_setting("scan_reveal", "click"), "click"),
-        format_func=lambda k: reveal_labels[k],
-        key="scan_reveal_sel",
-    )
     save_setting("scan_direction", direction)
-    save_setting("scan_reveal", reveal)
 
     if not pages:
         st.info("这一课还没有词。")
@@ -2167,38 +2071,10 @@ def render_scan_view() -> None:
         if p.exists() and p.stat().st_size > 0:
             audio_urls[r["word_id"]] = scanaudio.static_url(p)
 
-    rev = f"{page_no}-{st.session_state.get('scan_rev', 0)}"
-    # 不要用 clear_on_submit：它只清得掉 Streamlit 自己的隐藏输入，清不掉表格里
-    # 那些裸 HTML 的 checkbox，两边会对不上。清理统一交给同步脚本按 rev 做。
-    with st.form(f"scan_form_{page_no}"):
-        st.markdown(_scan_table_html(rows, direction, audio_urls, rev), unsafe_allow_html=True)
-        if reveal == "page":
-            st.markdown(
-                "<button class='scan-reveal-all' type='button'>揭晓这一页</button>",
-                unsafe_allow_html=True,
-            )
-        # 故意不藏：勾上面的框会自动填进来，但它同时是逃生口——万一注入的
-        # 同步脚本没挂上（Streamlit 升级改了 DOM 结构），你还能直接手打序号提交。
-        missed_raw = st.text_input(
-            "想不起来的序号（勾上面的框会自动填，也可以手打，逗号分隔）",
-            key="scan_missed",
-        )
-        submitted = st.form_submit_button("记下这一页 ▶", type="primary")
-    components.html(_scan_behavior_script(reveal), height=0, width=0)
-    components.html(_scan_sync_script(), height=0, width=0)
-
-    if submitted:
-        skill = scan.DIRECTIONS[direction][0]
-        missed = scan.parse_missed(missed_raw)
-        results = scan.commit(rows, missed)
-        record_scan_page(results, skill)
-        st.session_state.scan_missed_last = [
-            wid for wid, ok in results if not ok
-        ]
-        st.session_state.scan_rev = st.session_state.get("scan_rev", 0) + 1
-        if page_no + 1 < len(pages):
-            st.session_state.scan_page = page_no + 1
-        st.rerun()
+    st.markdown(
+        _scan_table_html(rows, direction, audio_urls, cursor=0),
+        unsafe_allow_html=True,
+    )
 
     missed_ids = st.session_state.get("scan_missed_last") or []
     if missed_ids:

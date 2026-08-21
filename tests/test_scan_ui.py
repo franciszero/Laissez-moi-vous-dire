@@ -62,10 +62,8 @@ def test_stale_saved_setting_does_not_break_the_scan_view():
     import store
 
     old_dir = store.load_setting("scan_direction", None)
-    old_rev = store.load_setting("scan_reveal", None)
     try:
         store.save_setting("scan_direction", "这个方向已经不存在了")
-        store.save_setting("scan_reveal", "nope")
         at = _run()
         _button(at, "⚡ 速过").click().run()
         assert not at.exception, [e.message for e in at.exception]
@@ -73,5 +71,3 @@ def test_stale_saved_setting_does_not_break_the_scan_view():
     finally:
         if old_dir is not None:
             store.save_setting("scan_direction", old_dir)
-        if old_rev is not None:
-            store.save_setting("scan_reveal", old_rev)

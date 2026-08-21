@@ -48,23 +48,8 @@ def page_rows(page_ids, id_to_lemma: dict, lemma_to_zh: dict, start_no: int = 1)
     return rows
 
 
-def commit(rows, missed_nos) -> list[tuple[int, bool]]:
-    """一页的行 + 用户勾了哪几个序号 → [(word_id, 是否算会), ...]。
-
-    没勾的算会：扫读的默认动作是「过」，只有想不起来才动手标。
-    """
-    missed = set(missed_nos)
-    return [(r["word_id"], r["no"] not in missed) for r in rows]
 
 
-def parse_missed(raw) -> set[int]:
-    """把 "3,7,12" 这种回传串解析成序号集合。脏值静默丢弃——这串是从
-    浏览器来的，宁可少标一个也不能让一页的提交整个炸掉。"""
-    out: set[int] = set()
-    for chunk in (raw or "").replace(" ", "").split(","):
-        if chunk.isdigit():
-            out.add(int(chunk))
-    return out
 
 
 def parse_ops(raw) -> list[tuple]:

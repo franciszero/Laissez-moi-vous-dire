@@ -51,25 +51,7 @@ def test_page_rows_missing_gloss():
     assert rows[0]["zh"] == "（无释义）"
 
 
-def test_commit_unmarked_counts_as_known():
-    rows = scan.page_rows(
-        [1, 2, 3], {1: "a", 2: "b", 3: "c"}, {"a": "甲", "b": "乙", "c": "丙"}
-    )
-    assert scan.commit(rows, {2}) == [(1, True), (2, False), (3, True)]
-    assert scan.commit(rows, set()) == [(1, True), (2, True), (3, True)]
 
-
-def test_commit_ignores_out_of_range_numbers():
-    rows = scan.page_rows([1], {1: "a"}, {"a": "甲"})
-    assert scan.commit(rows, {1, 99}) == [(1, False)]
-
-
-def test_parse_missed():
-    assert scan.parse_missed("3,7,12") == {3, 7, 12}
-    assert scan.parse_missed(" 3 , 7 ") == {3, 7}
-    assert scan.parse_missed("") == set()
-    assert scan.parse_missed(None) == set()
-    assert scan.parse_missed("3,,x,-1,7") == {3, 7}      # 脏值静默丢弃
 
 
 def test_scan_module_is_pure():
