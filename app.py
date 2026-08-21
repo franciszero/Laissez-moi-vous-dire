@@ -47,6 +47,7 @@ from store import (
     is_card_requested,
     get_card_requested_words,
     record_scan_page,
+    delete_last_scan_attempt,
 )
 
 ZH_VOICE = "Tingting"  # macOS 中文嗓音（听/看中文模式用）
@@ -2022,6 +2023,194 @@ def _scan_table_html(rows, direction: str, audio_urls: dict, cursor: int) -> str
     )
 
 
+def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
+    """键盘处理：揭晓、播放、判定、光标、回传。
+
+    走 components.html 注入、操作 window.parent.document —— 和
+    focus_answer_input / wire_form_enter_submit 同一套手法。除了写库那一下，
+    全部在浏览器端完成，光标移动一次 rerun 都不产生。
+    """
+    _skill, _open, _covered, play_locked = scan.DIRECTIONS[direction]
+    cfg = json.dumps({"playLocked": bool(play_locked), "autoplay": bool(autoplay)})
+    return """
+    <script>
+    (function boot(tries) {
+      tries = tries || 0;
+      const doc = window.parent.document;
+      const CFG = __CFG__;
+      const table = doc.querySelector(".scan-table");
+      const rows = table ? [...table.querySelectorAll(".scan-row")] : [];
+      if (!rows.length) {
+        // 注入的脚本可能比 st.markdown 先落地，重试几次再放弃
+        if (tries < 20) setTimeout(function () { boot(tries + 1); }, 60);
+        return;
+      }
+      const sink = doc.querySelector(".st-key-scan_sink input");
+      const flushBtn = doc.querySelector(".st-key-scan_flush button");
+      const nextBtn = doc.querySelector(".st-key-scan_next_page button");
+      const receipt = () => doc.querySelector("#scan-receipt");
+
+      let cursor = 0;
+      const revealed = new Set();
+      const marked = new Set();
+      const ops = [];
+
+      function setInput(el, value) {
+        const proto = window.parent.HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value);
+        el.dispatchEvent(new (window.parent.Event)("input", {bubbles: true}));
+      }
+      function flush() {
+        if (!sink || !flushBtn) return;
+        setInput(sink, ops.join(","));
+        flushBtn.click();
+      }
+      function wid(i) { return rows[i].dataset.wid; }
+
+      function paint() {
+        rows.forEach(function (tr, i) {
+          const on = i === cursor;
+          if (on) { tr.dataset.current = "1"; } else { delete tr.dataset.current; }
+          if (!tr.dataset.flash) tr.style.background = on ? "#eef5ff" : "";
+          const p = tr.querySelector(".scan-play");
+          if (p) p.style.visibility = on ? "" : "hidden";
+        });
+        rows[cursor].scrollIntoView({block: "center", behavior: "smooth"});
+      }
+      function reveal(i) {
+        rows[i].querySelectorAll(".scan-cover").forEach(function (el) {
+          el.style.filter = "none";
+          el.style.background = "transparent";
+        });
+        revealed.add(i);
+      }
+      function nudge(i) {
+        const tr = rows[i];
+        tr.style.outline = "2px solid #d0a000";
+        setTimeout(function () { tr.style.outline = ""; }, 220);
+      }
+      function play(i) {
+        if (CFG.playLocked && !revealed.has(i)) { nudge(i); return; }
+        const p = rows[i].querySelector(".scan-play[data-src]");
+        if (!p) return;
+        const a = new (window.parent.Audio)(p.dataset.src);
+        a.play().catch(function () {});
+      }
+      function flash(i, ok) {
+        const tr = rows[i];
+        tr.dataset.flash = "1";
+        tr.style.background = ok ? "#d8f0d8" : "#f6d6d6";
+        setTimeout(function () { delete tr.dataset.flash; paint(); }, 160);
+      }
+      function setCursor(i) {
+        cursor = Math.max(0, Math.min(i, rows.length - 1));
+        paint();
+        if (CFG.autoplay) play(cursor);
+      }
+      function advance() {
+        if (cursor + 1 < rows.length) { setCursor(cursor + 1); return; }
+        turnPage();
+      }
+      function turnPage() {
+        if (!nextBtn) return;
+        // 翻页是完整 rerun，会把表格连同本脚本一起重建。此时若还有判定在
+        // 往返路上，ops 会随重建一起蒸发。所以必须等回执确认写完再翻。
+        flush();
+        const want = ops.length;
+        let tries = 0;
+        (function wait() {
+          const r = receipt();
+          if (r && parseInt(r.textContent || "0", 10) >= want) { nextBtn.click(); return; }
+          if (++tries > 60) { nudge(cursor); return; }   // 3 秒等不到就不翻，让人发现
+          setTimeout(wait, 50);
+        })();
+      }
+      function mark(ok) {
+        ops.push(wid(cursor) + ":" + (ok ? "1" : "0"));
+        marked.add(cursor);
+        flush();
+        flash(cursor, ok);
+        setTimeout(advance, 160);
+      }
+      function back() {
+        const prev = cursor - 1;
+        if (prev < 0) return;
+        if (marked.has(prev)) {
+          ops.push("U:" + wid(prev));
+          marked.delete(prev);
+          flush();
+        }
+        setCursor(prev);
+      }
+
+      function typing(el) {
+        if (!el) return false;
+        const tag = (el.tagName || "").toLowerCase();
+        return tag === "input" || tag === "textarea" || tag === "select"
+               || el.isContentEditable;
+      }
+
+      function onKey(e) {
+        if (e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return;
+        if (typing(doc.activeElement)) return;
+        const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+        let hit = true;
+        if (k === "?" || k === "/" || k === "e") reveal(cursor);
+        else if (k === " ") play(cursor);
+        else if (k === "ArrowLeft" || k === "a") mark(true);
+        else if (k === "ArrowRight" || k === "d") mark(false);
+        else if (k === "ArrowDown" || k === "s") advance();
+        else if (k === "ArrowUp" || k === "w") back();
+        else hit = false;
+        if (hit) { e.preventDefault(); e.stopPropagation(); }
+      }
+
+      if (doc.__scanKb) doc.removeEventListener("keydown", doc.__scanKb, true);
+      doc.__scanKb = onKey;
+      doc.addEventListener("keydown", onKey, true);
+
+      rows.forEach(function (tr, i) {
+        const p = tr.querySelector(".scan-play");
+        if (p) p.onclick = function () { play(i); };
+      });
+
+      setCursor(0);
+    })(0);
+    </script>
+    """.replace("__CFG__", cfg)
+
+
+@st.fragment
+def _scan_sink(skill: str) -> None:
+    """键盘回传的落点。
+
+    用 fragment 是关键：写库只重跑这一小块，外层那张表的 DOM 不被重建——
+    光标位置、揭晓状态、待发的 ops 全都活在浏览器端，表格一重建就全丢了。
+    实测 fragment 重跑约 85ms，写一条库 0.36ms。
+    """
+    raw = st.text_input("scan_sink", key="scan_sink", label_visibility="collapsed")
+    if st.button("flush", key="scan_flush"):
+        ops = scan.parse_ops(raw)
+        done = int(st.session_state.get("scan_written", 0))
+        missed = st.session_state.setdefault("scan_missed_last", [])
+        for kind, word_id, ok in ops[done:]:
+            if kind == "mark":
+                record_scan_page([(word_id, ok)], skill)
+                if not ok and word_id not in missed:
+                    missed.append(word_id)
+            else:
+                delete_last_scan_attempt(word_id, skill)
+                if word_id in missed:
+                    missed.remove(word_id)
+        st.session_state.scan_written = len(ops)
+    # 回执：键盘脚本靠它确认服务端写到哪了，翻页前必须等它追上 ops.length
+    st.markdown(
+        f"<span id='scan-receipt' style='display:none'>"
+        f"{int(st.session_state.get('scan_written', 0))}</span>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_scan_view() -> None:
     """速过：整页扫读，键盘驱动。K4 补键盘脚本与回传。"""
     ids = st.session_state.scan_ids
@@ -2040,6 +2229,19 @@ def render_scan_view() -> None:
         key="scan_direction_sel",
     )
     save_setting("scan_direction", direction)
+    skill = scan.DIRECTIONS[direction][0]
+
+    # 发音属于题面就随便听，属于答案就得先揭晓——自动播放按方向决定，不能一刀切。
+    if skill == "rec_audio":
+        autoplay = True                       # 发音就是唯一的题面
+    elif skill == "rec_produce":
+        autoplay = False                      # 法语是答案，一响就等于念出来了
+    else:
+        autoplay = st.checkbox(
+            "切词时自动读一遍法语", value=bool(load_setting("scan_autoplay", True)),
+            key="scan_autoplay_cb",
+        )
+        save_setting("scan_autoplay", autoplay)
 
     if not pages:
         st.info("这一课还没有词。")
@@ -2071,10 +2273,31 @@ def render_scan_view() -> None:
         if p.exists() and p.stat().st_size > 0:
             audio_urls[r["word_id"]] = scanaudio.static_url(p)
 
+    # 一进新页或换方向就重置增量计数与回传串，否则上一页的 ops 会被重放一遍
+    ctx = (page_no, direction)
+    if st.session_state.get("scan_ctx") != ctx:
+        st.session_state.scan_ctx = ctx
+        st.session_state.scan_written = 0
+        st.session_state.scan_sink = ""
+
     st.markdown(
         _scan_table_html(rows, direction, audio_urls, cursor=0),
         unsafe_allow_html=True,
     )
+    st.caption("? 或 E 看答案 · 空格读音 · ←/A 会 · →/D 不会 · ↓/S 跳过 · ↑/W 回上一个")
+
+    # sink / flush / 翻页三个元素只是给脚本用的通道，藏起来
+    st.markdown(
+        "<style>.st-key-scan_sink,.st-key-scan_flush,"
+        ".st-key-scan_next_page{display:none}</style>",
+        unsafe_allow_html=True,
+    )
+    _scan_sink(skill)
+    if st.button("next_page", key="scan_next_page"):
+        if page_no + 1 < len(pages):
+            st.session_state.scan_page = page_no + 1
+        st.rerun()
+    components.html(_scan_keyboard_script(direction, autoplay), height=0, width=0)
 
     missed_ids = st.session_state.get("scan_missed_last") or []
     if missed_ids:
