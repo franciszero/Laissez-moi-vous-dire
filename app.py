@@ -2010,7 +2010,8 @@ def _scan_table_html(rows, direction: str, audio_urls: dict, cursor: int) -> str
         body += (
             f"<tr class='scan-row' data-no='{r['no']}' data-wid='{r['word_id']}'{mark}"
             f" style='{bg}transition:background .12s'>"
-            f"<td style='color:#999;font-size:.82em;padding:6px 0'>{r['no']}</td>"
+            f"<td style='color:#999;font-size:.82em;padding:6px 0'>{r['no']}"
+            f"<span class='scan-mark' style='font-weight:600'></span></td>"
             f"<td style='padding:6px 0'>{play}</td>"
             f"<td style='padding:6px 0'>{cells['fr']}</td>"
             f"<td style='padding:6px 0'>{cells['zh']}</td>"
@@ -2067,11 +2068,27 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
       }
       function wid(i) { return rows[i].dataset.wid; }
 
+      // 底色说「你判过什么」，左侧竖条说「你现在在哪」——两个信息用两条视觉
+      // 通道，互不遮挡。原来只闪 160ms 再还原，扫完一页回头看什么都看不出来。
+      const MARK = {
+        y: ["#e3f4e3", "\u2713", "#1a7f37"],   // 会
+        n: ["#fae3e3", "\u2717", "#b42318"],   // 不会
+        s: ["#f1f1f1", "\u00b7", "#999999"]    // 跳过（没表态就过了）
+      };
+      const state = {};
+
       function paint() {
         rows.forEach(function (tr, i) {
           const on = i === cursor;
           if (on) { tr.dataset.current = "1"; } else { delete tr.dataset.current; }
-          if (!tr.dataset.flash) tr.style.background = on ? "#eef5ff" : "";
+          const m = state[i] ? MARK[state[i]] : null;
+          tr.style.background = m ? m[0] : (on ? "#eef5ff" : "");
+          tr.style.boxShadow = on ? "inset 3px 0 0 #3b82f6" : "";
+          const g = tr.querySelector(".scan-mark");
+          if (g) {
+            g.textContent = m ? " " + m[1] : "";
+            g.style.color = m ? m[2] : "";
+          }
           const p = tr.querySelector(".scan-play");
           if (p) p.style.visibility = on ? "" : "hidden";
         });
@@ -2096,19 +2113,16 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
         const a = new (window.parent.Audio)(p.dataset.src);
         a.play().catch(function () {});
       }
-      function flash(i, ok) {
-        const tr = rows[i];
-        tr.dataset.flash = "1";
-        tr.style.background = ok ? "#d8f0d8" : "#f6d6d6";
-        setTimeout(function () { delete tr.dataset.flash; paint(); }, 160);
-      }
       function setCursor(i) {
         cursor = Math.max(0, Math.min(i, rows.length - 1));
         paint();
         if (CFG.autoplay) play(cursor);
       }
       function advance() {
+        // 「听了就跳过」也要留痕，否则回头分不清「没表态」和「还没走到」
+        if (!state[cursor]) state[cursor] = "s";
         if (cursor + 1 < rows.length) { setCursor(cursor + 1); return; }
+        paint();
         turnPage();
       }
       function turnPage() {
@@ -2133,9 +2147,9 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
         const i = cursor;
         ops.push(wid(i) + ":" + (ok ? "1" : "0"));
         marked.add(i);
+        state[i] = ok ? "y" : "n";
         flush();
-        flash(i, ok);
-        if (i + 1 < rows.length) setCursor(i + 1); else turnPage();
+        if (i + 1 < rows.length) setCursor(i + 1); else { paint(); turnPage(); }
       }
       function back() {
         const prev = cursor - 1;
@@ -2145,6 +2159,7 @@ def _scan_keyboard_script(direction: str, autoplay: bool) -> str:
           marked.delete(prev);
           flush();
         }
+        delete state[prev];        // 退回来就是要重判，先把痕迹擦掉
         setCursor(prev);
       }
 
@@ -2306,6 +2321,7 @@ def render_scan_view() -> None:
         unsafe_allow_html=True,
     )
     st.caption("? 或 E 看答案 · 空格读音 · ←/A 会 · →/D 不会 · ↓/S 跳过 · ↑/W 回上一个")
+    st.caption("行底色＝你判过什么：绿 ✓ 会 · 红 ✗ 不会 · 灰 · 跳过；左边蓝竖条＝当前在哪")
 
     # sink / flush / 翻页三个元素只是给脚本用的通道，藏起来
     st.markdown(

@@ -130,3 +130,10 @@ def test_saved_index_falls_back_instead_of_exploding():
     assert fn(opts, "已经改名的旧值", "听音→想双") == 2
     assert fn(opts, None, None) == 0
     assert fn([], "x", "y") == 0
+
+
+def test_every_row_has_a_slot_for_the_mark_glyph():
+    """脚本靠这个 span 写 ✓/✗/· ——光靠颜色不够清楚，也不利于色觉障碍。"""
+    fn = _load_app_fns()["_scan_table_html"]
+    out = fn(ROWS, "看法→想中", URLS, 0)
+    assert out.count("scan-mark") == 3

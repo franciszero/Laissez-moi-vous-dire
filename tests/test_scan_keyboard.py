@@ -99,3 +99,29 @@ def test_focus_is_reclaimed_after_every_full_rerun():
     激活——空格是播放键，一按就会再翻一页。"""
     out = _script("看法→想中", True)
     assert "activeElement" in out and ".blur()" in out
+
+
+def test_marks_are_painted_persistently_not_flashed():
+    """闪一下就还原的话，扫完一页回头看不出自己标过什么。底色必须留着。"""
+    out = _script("看法→想中", True)
+    assert "setTimeout" not in out.split("function paint()")[1].split("}")[0]
+    assert "const state = {}" in out
+    assert "state[i] = ok" in out
+    assert "flash" not in out          # 短暂闪色已经删掉，别再加回来
+
+
+def test_skipped_rows_leave_a_trace_too():
+    """↓ 跳过也要留痕，否则回头分不清「没表态」和「还没走到」。"""
+    out = _script("看法→想中", True)
+    assert 'state[cursor] = "s"' in out
+
+
+def test_cursor_and_mark_use_different_visual_channels():
+    """底色被标记占用了，光标就不能也靠底色——否则站在标过的行上看不出在哪。"""
+    out = _script("看法→想中", True)
+    assert "boxShadow" in out
+
+
+def test_stepping_back_clears_the_trace_so_it_can_be_rejudged():
+    out = _script("看法→想中", True)
+    assert "delete state[prev]" in out
