@@ -296,6 +296,7 @@ _PROVENANCE_ACTION_LABELS = {
     "review": "复习回顾",
     "user_supplied": "课后材料补充",
     "agent_supplement": "补充词（老师未要求）",
+    "handout": "老师发的讲义（课上未讲到）",
 }
 
 
