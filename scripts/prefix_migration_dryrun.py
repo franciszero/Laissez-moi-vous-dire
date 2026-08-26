@@ -27,7 +27,11 @@ DEFAULT_GLOB = "/Users/francis/Documents/法语/本地录屏课/L*/vocab.json"
 _PREFIX = re.compile(r"^\[([^\]]+)\]")
 _SUPP = re.compile(r"\s*补\s*$")
 
+_SKILLS = ("听写", "阅读", "听力", "写作", "口语", "课外")
+
 _RULES = [
+    # 已经是新形状的：识别为「已迁移」，不算改动也不算无法映射。
+    (re.compile(r"^L\d+(?:" + "|".join(_SKILLS) + r")$"), None),
     # (识别旧前缀, 新技能标签)
     (re.compile(r"^L\d+课前复习$"), "听写"),
     (re.compile(r"^L\d+写作T\d+\w*$"), "写作"),
@@ -36,6 +40,10 @@ _RULES = [
     # 原设计只列了五个，是照 L38 一课想当然的。
     (re.compile(r"^L\d+听力(?:T\d+\w*)?$"), "听力"),
     (re.compile(r"^L\d+课外题$"), "课外"),
+    # 2026-08-25 用户裁定：动词变位紧接开课听写做，同一个环节 → 听写；
+    # 课后补注不属于任何技能环节 → 课外。
+    (re.compile(r"^L\d+动词变位$"), "听写"),
+    (re.compile(r"^L\d+课后补注$"), "课外"),
     (re.compile(r"^T\d+Q[\w/]+(?:\s*[;；]\s*T\d+Q[\w/]+)*$"), "阅读"),
 ]
 
@@ -48,6 +56,8 @@ def classify(prefix_body: str) -> tuple[str | None, bool]:
     core = _SUPP.sub("", prefix_body).strip()
     for pattern, skill in _RULES:
         if pattern.match(core):
+            if skill is None:                      # 已经是新形状，原样保留
+                return core[len(re.match(r"L\d+", core).group(0)):], is_supp
             return skill, is_supp
     return None, is_supp
 
