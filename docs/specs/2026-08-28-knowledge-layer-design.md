@@ -31,8 +31,8 @@
 |---|---|---|
 | 上一节新课（`french-lesson-run`） | §0.3 硬规则 · §3 权威模型 | §4 §5 §6 |
 | 往已有课增量摄入材料 | §0.3 · §3.2 §3.3 档位与三态 | §5 §6 §7 |
-| 实施身份层（Phase 1） | §2 全部 · §4 全部 · §5.1 | §6 §7 |
-| 实施边（Phase 2） | §2.3 §2.4 · §3 · §5.2 | §1 |
+| 实施身份层（Phase 1） | §2 全部 · §4 全部 · §5.1 · **§8.2 末 §8.3 末** | §6 §7 |
+| 实施边（Phase 2） | §2.3 §2.4 · §3 · §5.2 · **§8.3 末 §8.5（7.5 那条）** | §1 |
 | 做跨课分析／写手册 | §1.2 缺陷 · §6 已知坑 | §5 |
 | 审这份文档 | 全部，重点 §7 待审问题 ＋ §8 第三轮意见 | — |
 | 只想知道沙粒／节点怎么定义 | §2.1 §2.2 · **§8.1** | 其余 |
@@ -77,6 +77,8 @@
 - 概念层是否要进 8501，还是只服务于分析与手册
 
 **第三轮审核（2026-08-28）已对 §7 全部九条给出裁决，见 §8。**
+**§5 迁移路径本身未改**（外科式修订的代价）：Phase 0 与「Phase 1 加角色标记」
+只写在 §8，没有回填进 §5，路由表已就这两行加了指向。要动排期请以 §8 为准。
 其中会改动排期的两条：新增 **Phase 0 身份键检查器**（§8.2 末），
 以及 Phase 1 的产出增加「每粒沙的角色标记」以便 species 身份可派生（§8.3）。
 前七部分只做了外科式修正，逐处标注「2026-08-28 第三轮复核」，未整体重写。
@@ -145,7 +147,9 @@ species 的 schema 设计了 `genus`（属）作为分类身份键。实际：
 **（b）同一个词被存成互不相识的多份**
 
 2,164 个词条行，只有 **1,607 个不同的 lemma**；**405 个 lemma（25%）跨课重复**。
-`se garer` 出现 6 次，`un cadeau` / `rencontrer` / `un séjour` / `un stage` 各 5 次。
+`se garer` 出现 6 次；出现 5 次的有 **8 个**——`un cadeau` / `rencontrer` /
+`un séjour` / `un stage` / `un collègue` / `baisser` / `un concours` / `un locataire`
+（前两版只列了前四个，读起来像穷举，补全）。
 
 `un cadeau` 现在是分散在 5 节课里的 5 个独立行，每一行都同时承担「这个词」
 和「这次出现」两个角色。
@@ -310,6 +314,17 @@ canonical key；「老师在 L38 讲了 permettre」不是。§7.8 说的「诊�
    **Phase 4 一旦并进来，`teacher_action` 就变成第二个 `genus`。**
    同一批文件里的 `category` 反而是干净的（1,185 条 15 个值）——
    区别只有一个：`category` 是先定枚举，`teacher_action` 是写卡时现填。见 §8.2。
+3. **上面那张边类型表接不住这些值。** 把档位那三个（`handout` /
+   `agent_supplement` / `user_supplied`，共 224 条）摘出去之后，剩下的关系值里
+   只有三个有去处：`correction` 64 → `corrects`、`contrast` 53 → `contrasts`、
+   `synonym` 15 → `synonym_of`（`word_family` 34 勉强算 `groups`）。
+   **`memorize` 268 ＋ `explain` 217 ＋ `review` 88 ＝ 573 条（占 963 的 59.5%）
+   在表里没有任何一行可落。** 反过来，表里的 `assigns` 一条实例都没有。
+   这不是补几行表格的事：`memorize` / `explain` / `review` 描述的是
+   **老师对这一粒沙做了什么**，不是**两个东西之间是什么关系**——
+   它们本来就不该变成边，该留在观察的 `event.teacher_action` 上。
+   §2.3 真正要搬到边上的只有 `correction` / `contrast` / `synonym` / `word_family`
+   这 166 条。**"边类型已经存在"这句话，覆盖的是全库 17%，不是全库。**
 
 ## 2.4 递归
 
@@ -352,12 +367,15 @@ L38 结构手册里的「L0 方法论 / L1 零件 / L2 接口 / L3 框架 / L4 �
     "evidence": { "file": "VibeVoice/docker-data/outputs/L38/L38_final_working.md",
                   "lines": "951-956" },
     "teacher_action": "explain",
-    "asr_route": "whisper_large_v3_turbo_q4"  // 三路分歧时选了哪一路（§3.1）
+    "asr_route": "whisper_large_v3_turbo_q4", // 三路分歧时选了哪一路（§3.1）
+    "selected_span": "permettre à quelque chose, de加动词不定时"
+                                              // ← 逐字节照抄 :956，机器比对用
+                                              //   （§4 不变式 11，2026-08-28 第三轮加）
   },
   "claim": {                                  // ← 语言权威，可更正
-    "text": "permettre à qn de + inf",
+    "text": "permettre à qn de + inf",        // 归一化写法，不参与比对
     "authority": "language",
-    "basis": "词典论元框架；主路转写 back matter 系 ASR 失真",
+    "basis": "词典论元框架；主路与 Qwen3 转成 back matter 系 ASR 失真；Whisper q4 转出 à quelque chose，按论元框架裁为 à qn",
     "status": "confirmed"
   } }
 
@@ -368,8 +386,12 @@ L38 结构手册里的「L0 方法论 / L1 零件 / L2 接口 / L3 框架 / L4 �
   "tags": ["preposition_interface", "core", "B1"] }   // 来自受控词表
 
 // 边：递归在 to 上（to 可以是观察，也可以是概念）
+// 注意 to 必须是上面真实存在的那个 id。前两版这里写的是
+// `obs:L38:0109:permettre-fix`——库里没有这个 id，而且 0109 与上面的 0930
+// 是两套时间编码。十行示例里出现两种命名规则，正是 §7.2 在问的那个病
+// （2026-08-28 第三轮复核修正）。
 { "from": "cpt:permettre-argument-frames",
-  "to":   "obs:L38:0109:permettre-fix",
+  "to":   "obs:L38:0930:permettre-a-qn-de",
   "type": "observes",
   "authority": "teacher",              // §3
   "status": "confirmed",               // §3.3
@@ -998,9 +1020,12 @@ species 身份作为 Phase 2 建边的副产品自然出现（因为边一建，
   在 §4 不变式 9 跑通之前给学习者看，是把未验证的合并结果当结论展示。
 - **7.5（权威模型是否过重）**：不重，**但轻的地方不在三态。**
   三态那 201 条 agent／user 提议（20%）是真实存在的，两态无法表达。
-  真正过重的是 §2.3 那六种边类型——`assigns` 在库里只有 `handout` 23 条对应，
-  `synonym_of` 15 条。建议 Phase 2 先只实现 `observes` / `groups` / `corrects` 三种，
-  另外三种等到有 50 条以上实例再开。这不影响 schema，只影响实现顺序。
+  真正过重的是 §2.3 那六种边类型——按 §2.3 第 3 条的清点，
+  `assigns` 在库里**一条实例都没有**（`handout` 23 条是权威档位，不是关系），
+  `synonym_of` 只有 15 条。建议 Phase 2 先只实现
+  `observes` / `groups` / `corrects` / `contrasts` 四种（覆盖 166 条里的 151 条），
+  `synonym_of` 与 `assigns` 等到各有 50 条以上实例再开。
+  这不影响 schema，只影响实现顺序。
 - **7.6（Topic Maps / SKOS）**：不采用它们的序列化，采用它们的**术语**（附录已经在做）。
   理由是文档附录自己给的：本设计的节点是超边，而 SKOS/Topic Maps 的工具链
   假设二元关系。为了套格式去把超边拆成二元三元组，会立刻丢掉 §8.1 那条
@@ -1039,6 +1064,9 @@ Whisper q4 转出 `permettre quelque chose` 与 `permettre à quelque chose, de�
 | §4-9 | 不变式 9 是同义反复 |
 | §4-11 | 不变式 11 按原样不可跑（`claim.text` 与候选行永不相等） |
 | §4-2 | 不变式 2 门槛设成 1，会放过 377 个只有一条 `occurrences` 的节点 |
+| §2.3 | 边类型表接不住 `teacher_action`：573 条（59.5%）无处可落，`assigns` 零实例 |
+| §2.6 | 示例里的边指向 `obs:L38:0109:permettre-fix`，库里没有这个 id，且与上方的 `0930` 是两套编码 |
+| §1.2b | 「各 5 次」只列了 8 个里的 4 个，读起来像穷举 |
 
 **本设计从未提及、但与它直接相关的既有产物**（建议补进「相关文件」）：
 
